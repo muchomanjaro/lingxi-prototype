@@ -469,13 +469,42 @@ When the user clicks "一切就绪，开始使用！":
 1. Rust spawns Hermes agent as a child process.
 2. Sends init message via stdin.
 3. Agent responds with `{ "type": "ready", "version": "0.1.0" }`.
-4. UI transitions from wizard to Dashboard.
-5. Auto-start prompt appears: "是否希望开机自动启动灵犀？" — Yes / Not now.
+4. Auto-start prompt appears: "是否希望开机自动启动灵犀？" — Yes / Not now.
+
+### Step 9: 试试这些入门任务！ — Quick Start Overlay
+
+After the auto-start preference is set, the user is NOT taken to an empty Dashboard. Instead, a Quick Start overlay appears with profession-specific example prompts:
+
+```
+🎉 一切就绪！试试这些入门任务：
+
+  [📝] 编写一份关于[学科]的教案
+        生成一份完整的课堂教案模板
+
+  [✉️] 帮[家长称呼]写一封关于[主题]的邮件
+        以家长身份撰写一封沟通邮件
+
+  [📊] 分析一下最近的考试数据
+        解读成绩趋势，发现薄弱环节
+
+  [🌐] 翻译这篇英文文章到中文
+        保持原意，通顺自然
+
+选择一个任务，灵犀会立即开始工作。        [稍后再说]
+```
+
+- The 3-4 example prompts are generated dynamically from the user's profession (identified in Step 2). The teacher example above becomes lawyer prompts (contract review, legal memo, case research), marketer prompts (campaign brief, copy edit, competitor analysis), or programmer prompts (code review, bug analysis, architecture design) based on profession.
+- Clicking any task card → sends the prompt to the agent → UI transitions to the Chat page → user watches the agent respond in real time with streaming tokens, tool calls, and formatted final answers.
+- After the agent's first complete response, a subtle encouragement banner appears above the chat input:
+  "不错吧？试试自己输入一个问题，或者选择另一个入门任务。"
+- The overlay can be dismissed at any time via "稍后再说" → the Dashboard is shown normally.
+- State flag `quick_start_dismissed: true` is persisted in config; the overlay only appears on the very first launch after setup completion.
+- This is the single most important UX moment in the application — it eliminates blank page syndrome and immediately demonstrates value.
 
 ### Phase 3: Setup Complete
 
 - Wizard hides permanently (config flag `setup_completed: true`).
-- App launches into Dashboard by default on subsequent starts.
+- App launches into Dashboard by default on subsequent starts (after Quick Start overlay is dismissed).
 - User can revisit wizard settings via Settings → Re-run setup.
 
 ---
@@ -498,6 +527,7 @@ Visual style: Clean cards, large Chinese text, progress dots at top. Warm brand 
 6. **安装Hermes引擎** — Progress bar with real-time Chinese status: cloning, venv, pip install, config write. Security note: "Hermes是开源软件，代码公开可审查。"
 7. **加载技能包** — Profession-matched skill packs with per-pack toggle. Each shows icon, name, description. Security note: "技能包仅包含提示词模板，不会自动访问你的文件。"
 8. **最终确认** — Full summary with green checkmarks for every configured item. "一切都设置好了。灵犀AI助手已准备就绪。" Button: "一切就绪，开始使用！" / "All set, start using!"
+9. **入门引导** — Quick Start overlay with 3-4 profession-specific example prompts (generated from Step 2 data). Click a prompt → opens Chat, agent responds in real time. Encouragement banner after first response: "不错吧？试试自己输入一个问题，或者选择另一个入门任务。" Dismiss to Dashboard. Only shown once.
 
 State persistence: Wizard state saved to `~/.lingxi/wizard_state.json`. If app crashes mid-setup, it resumes from the last completed step on next launch.
 
@@ -637,6 +667,15 @@ Primary interaction surface. Full-height, no scroll on page level — only the m
 - "全部更新" (Update All) button or per-pack update.
 - Progress modal: downloading → verifying → installing → reloading skills.
 - After update, `reload_skills` command sent to agent (no restart needed if agent supports hot-reload).
+
+**First-visit Skill Discovery:**
+- On the user's first visit to the Skill Manager (tracked by `skill_manager_first_visit` flag in config), a discovery banner appears at the top:
+  "根据你的职业（教师），我们推荐这些技能包" (profession filled from onboarding Step 2 data).
+- Below the banner, 2-3 recommended skill packs matching the user's profession are highlighted with a glowing border and a "推荐" (Recommended) badge. These packs are drawn from skills the user has NOT yet installed.
+- Skills matching the user's reported time sinks (from Step 2: "你平时花时间最多的三项工作是什么？") receive priority placement in the recommendation list.
+- A brief tooltip tour guides the user through the Skill Manager: the store button ("在这里浏览更多技能包"), the installed view ("已安装的技能包在这里管理"), and the per-pack enable toggle ("可以随时开启或关闭每个技能包").
+- The Skill Store tab adds an "explore by profession" filter, letting users browse packs by their own or other professions.
+- The discovery banner and tour only show once; subsequent visits show the standard Skill Manager view.
 
 ---
 
@@ -1204,6 +1243,48 @@ Primary interaction surface. Full-height, no scroll on page level — only the m
 - Border radius slider (UI corner roundness)
 - Dark mode / Light mode / Follow system
 - **Custom CSS** textarea in Advanced tab (power users; injected into WebView at runtime)
+
+---
+
+### 4.19 Re-engagement & Retention
+
+**Navigation:** No dedicated sidebar icon. Configured via Settings → General → new Notifications tab. Backend module in Rust Scheduler.
+
+**Inactivity Tracking:**
+- A new `engagement/` Rust module tracks the user's last activity timestamp (last message sent, last app interaction, last task run).
+- Timestamp is checked every hour by the Scheduler against three thresholds (24h, 3d, 7d).
+- "Do Not Disturb" hours are respected (default 22:00–08:00) — no notifications during this window.
+- All re-engagement features can be disabled via Settings toggle: "Enable re-engagement notifications" (default: on).
+
+**Re-engagement cadence:**
+
+1. **24 hours of inactivity:**
+   - Desktop notification via Tauri notification plugin:
+     "你昨天还没用完你的免费额度呢 😊" — "You still have free credits from yesterday!"
+   - Clicking the notification opens the app and focuses the Chat page.
+
+2. **3 days of inactivity:**
+   - Desktop notification with richer content:
+     "灵犀想你了！有新的技能包可用。" — "Lingxi misses you! New skill packs are available."
+   - Includes a dynamic note about what's new (e.g., "教师技能包已更新了3个新模板" if applicable).
+   - Badge count appears on the app's dock/taskbar icon.
+
+3. **7 days of inactivity:**
+   - If any gateways are configured (WeChat, Telegram, Discord, Email), send a follow-up message through the gateway bridge:
+     - WeChat: "好久不见！灵犀有了新功能，来看看吧 😊"
+     - Email: "Lingxi Hermes — 你最近还好吗？" with a brief new-feature summary
+     - Telegram/Discord: similar message in the configured channel
+   - If no gateways are configured, escalate to a more prominent desktop notification.
+   - Reuses the existing Gateway Bridge module — no new infrastructure needed.
+
+**Settings → General → Notifications tab (new):**
+- "Enable re-engagement notifications" toggle (default: on)
+- "Do Not Disturb hours" — start/end time pickers
+- Re-engagement cadence: dropdown (Default / More frequent / Less frequent / Custom)
+- "允许通过网关发送提醒" (Allow reminders via gateways) — toggle (default: on)
+- Last activity timestamp display (read-only)
+
+**Data flow:** The Rust Scheduler runs a periodic task (every hour) that checks inactivity duration against thresholds. When a threshold is crossed, it triggers the appropriate action (desktop notification via Tauri API, or gateway message via Gateway Bridge). The `engagement/` module stores the last activity timestamp in `~/.lingxi/engagement_state.json`.
 
 ---
 
