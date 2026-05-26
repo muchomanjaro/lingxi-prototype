@@ -59,6 +59,8 @@
 | Rust IPC protocol | JSON-line over stdin/stdout to agent | Human-readable, easy to debug, no binary protocol |
 | Bundler | Vite (via Tauri CLI) | Fastest HMR, native ESM, best Tauri integration |
 | Desktop packaging | Tauri CLI + `.dmg` (macOS) → `.msi` (Windows) | Native installers per platform |
+| Code editor (config) | CodeMirror 6 (lightweight, ~50 KB) | Monaco is 5 MB — too heavy for occasional config editing |
+| Audio processing | Tauri plugin + whisper.cpp (Rust bindings) | Local voice I/O without cloud dependency |
 
 ---
 
@@ -67,67 +69,82 @@
 ### High-Level Architecture
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                    Tauri Window                      │
-│  ┌─────────────────────────────────────────────────┐│
-│  │              WebView (React UI)                  ││
-│  │  ┌──────┐ ┌───────┐ ┌──────┐ ┌──────────┐      ││
-│  │  │Page 1│ │Page 2 │ │Page 3│ │  Page 4  │ ...  ││
-│  │  └──────┘ └───────┘ └──────┘ └──────────┘      ││
-│  │         Zustand store (shared state)             ││
-│  └─────────────────────────────────────────────────┘│
-│                          │ IPC (invoke / events)      │
-│  ┌─────────────────────────────────────────────────┐│
-│  │             Rust Backend (Tauri)                 ││
-│  │  ┌──────────┐ ┌──────────┐ ┌────────────────┐  ││
-│  │  │ Process  │ │  Config  │ │ Update/Install │  ││
-│  │  │ Manager  │ │  Store   │ │ Engine         │  ││
-│  │  └────┬─────┘ └──────────┘ └────────────────┘  ││
-│  │       │ stdin/stdout                             ││
-│  │       ▼                                          ││
-│  │  ┌──────────┐                                    ││
-│  │  │ Hermes   │ (Python child process)             ││
-│  │  │ Agent    │                                    ││
-│  │  └──────────┘                                    ││
-│  └─────────────────────────────────────────────────┘│
-└─────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                         Tauri Window                              │
+│  ┌──────────────────────────────────────────────────────────────┐│
+│  │                 WebView (React UI)                            ││
+│  │  ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐     ││
+│  │  │Dashboard│ Chat  │Skills │Profiles│ MCP   │Gateway│ ...  ││
+│  │  └──────┘ └──────┘ └──────┘ └──────┘ └──────┘ └──────┘     ││
+│  │  ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐     ││
+│  │  │Tasks │Memory │Plugins│Files │Voice  │Settings│          ││
+│  │  └──────┘ └──────┘ └──────┘ └──────┘ └──────┘ └──────┘     ││
+│  │         Zustand stores (shared state across pages)            ││
+│  └──────────────────────────────────────────────────────────────┘│
+│                         │ IPC (invoke / events)                    │
+│  ┌──────────────────────────────────────────────────────────────┐│
+│  │                   Rust Backend (Tauri)                        ││
+│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────┐   ││
+│  │  │ Process  │ │  Config  │ │Update/   │ │  Scheduler   │   ││
+│  │  │ Manager  │ │  Store   │ │Install   │ │  (cron)      │   ││
+│  │  └────┬─────┘ └──────────┘ └──────────┘ └──────┬───────┘   ││
+│  │       │                                         │           ││
+│  │  ┌────┴─────────────────────────────────────────┴───────┐   ││
+│  │  │              Stdio Bridge (JSON-line IPC)              │   ││
+│  │  └────────────────────────┬──────────────────────────────┘   ││
+│  │                           │ stdin/stdout                       ││
+│  │  ┌────────────────────────▼──────────────────────────────┐   ││
+│  │  │              Hermes Agent (Python child process)        │   ││
+│  │  │  ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐       │   ││
+│  │  │  │ Chat  │ Tools │ MCP   │Memory │ Voice │ ...      │   ││
+│  │  │  └──────┘ └──────┘ └──────┘ └──────┘ └──────┘       │   ││
+│  │  └──────────────────────────────────────────────────────┘   ││
+│  └──────────────────────────────────────────────────────────────┘│
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ### Layer Responsibilities
 
 **WebView (React UI) — Presentation only.**
-- Renders all screens (wizard, dashboard, chat, settings, skill manager).
-- Maintains transient UI state (which page is open, scroll position, form input state).
+- Renders all screens (wizard, dashboard, chat, settings, profiles, MCP, gateways, tasks, memory, plugins, files, voice, logs).
+- Maintains transient UI state (which page is open, scroll position, form input state, which panels are collapsed).
 - Sends commands to Rust via `invoke()` (blocking request-response).
-- Listens for events from Rust via `listen()` (streaming data, agent status changes).
+- Listens for events from Rust via `listen()` (streaming data, agent status changes, tool calls, heartbeat).
 - Never directly touches the filesystem, spawns processes, or reads agent state.
 - Stores no secrets — API keys live in Rust's encrypted config store, never in the DOM.
 
 **Rust Backend — Trusted controller.**
 - **Process Manager:** Spawns, monitors, restarts, kills the Hermes Python process. Sends heartbeat pings. Emits `agent-status-changed` events. Holds a `HashMap<Pid, ProcessState>`.
-- **Stdio Bridge:** Writes JSON messages to Hermes stdin; reads JSON messages from Hermes stdout. Handles line buffering, backpressure, and pipe errors. Maps agent responses to `agent-message` Tauri events for the UI.
-- **Config Store:** Reads/writes `~/.lingxi/config.toml` (encrypted API keys, user preferences, window state). Encryption uses platform keychain (macOS Keychain via `security` framework, Windows Credential Manager via winapi).
-- **Update Engine:** Checks registry for new agent versions and skill pack updates. Downloads diffs, verifies checksums, applies updates. Emits `update-available` and `update-progress` events.
+- **Stdio Bridge:** Writes JSON messages to Hermes stdin; reads JSON messages from Hermes stdout. Handles line buffering, backpressure, and pipe errors. Maps agent responses to Tauri events (`agent-message`, `tool-call`, `tool-result`, `memory-update`, `agent-status`, etc.).
+- **Config Store:** Reads/writes `~/.lingxi/config.toml` (encrypted API keys, user preferences, window state, profiles, gateways, MCP servers, tasks, plugins). Encryption uses platform keychain (macOS Keychain via `security` framework, Windows Credential Manager via winapi).
+- **Scheduler (Cron Engine):** Lightweight in-process scheduler. Reads tasks from `~/.lingxi/tasks.json`. Uses a timer wheel to trigger tasks at their next scheduled time. Sends task execution messages through the Stdio Bridge. Logs results.
+- **Gateway Bridge:** For each configured gateway (Telegram, Discord, Email), maintains a lightweight connection thread. Relays messages between gateways and the Hermes agent via the Stdio Bridge. Emits gateway status events.
+- **Voice Engine:** Manages microphone capture (via Tauri plugin or CPAL) and audio playback. Interfaces with whisper.cpp (local STT) or cloud speech API. Sends transcribed text to agent; receives TTS audio from agent or generates locally.
+- **File System Access:** Mediates all file reads/writes/searches for the UI. Provides directory tree listing, file content reading (with size limits), file search (by name and content), and native file picker dialogs.
+- **Update Engine:** Checks registry for new agent versions, skill pack updates, and plugin updates. Downloads diffs, verifies checksums, applies updates. Emits `update-available` and `update-progress` events.
 - **Auto-Start Service:** Manages launchd plist (macOS) / Task Scheduler (Windows) entries. Toggle on/off from settings.
 
-### Data Flow — Chat Interaction
+### Data Flow — Chat Interaction with Tool Calls
 
 ```
 User types message in chat input
   → React state updates (optimistic UI, show "sending...")
-  → invoke("send_message", { text: "你好" })
-    → Rust serializes { type: "user_message", text: "你好" }\n
+  → invoke("send_message", { text: "帮我查一下天气", profile: "cicero" })
+    → Rust serializes { type: "chat", text: "...", profile: "cicero", conversation_id: "..." }\n
     → Writes to Hermes agent stdin (non-blocking)
-      → Agent processes and writes response to stdout
+      → Agent decides to use tool: calls get_weather()
+      → Agent writes { type: "tool_call", tool: "get_weather", args: {...}, id: "call_1" }\n
     → Rust reads line from agent stdout (async reader task)
-    → Parses JSON: { type: "agent_message", text: "...", done: false }
-    → Emits event("agent-message", parsed)
-      → React listens, appends to message list
-    → Repeat until done: true
-  → invoke() resolves when agent signals completion
+    → Parses JSON, emits event("tool-call", { tool: "get_weather", args: {...}, id: "call_1" })
+      → React shows tool call card in chat (collapsed: "🔧 正在查询天气..." expand for details)
+    → Agent completes tool, writes { type: "tool_result", id: "call_1", result: "25°C, 晴" }\n
+    → Rust emits event("tool-result", { id: "call_1", result: "25°C, 晴" })
+      → React updates tool call card with result
+    → Agent generates final response with streaming tokens
+    → Rust emits event("agent-token", { text: "当前", done: false }) ... repeat
+      → React accumulates tokens into message bubble
+    → Final: event("agent-message", { text: "...", done: true })
 ```
-
-Streaming responses (agent typing in real-time) use Tauri events, not `invoke`. The Rust backend emits a stream of `agent-token` events as the agent generates output. React accumulates them into the message bubble. This gives a natural "typing" feel.
 
 ### Data Flow — Agent Lifecycle
 
@@ -136,7 +153,7 @@ App launches
   → Rust reads config, checks if agent was running on last quit
   → If auto-start enabled: Process Manager spawns agent
   → Emits "agent-status-changed" { status: "starting" | "running" | "stopped" | "error", pid?, uptime? }
-  → UI updates dashboard indicator
+  → UI updates dashboard indicator and all status-sensitive UI elements
 
 App quits
   → Rust sends SIGTERM to agent process (graceful shutdown, 5s timeout)
@@ -164,6 +181,26 @@ App quits
 - Crashed → auto-restart (up to 3 attempts, exponential backoff: 1s, 5s, 30s).
 - After 3 crashes within 10 minutes, move to ERROR and notify user.
 - User can manually restart from ERROR at any time.
+
+### IPC Event Catalog (UI ← Rust)
+
+| Event | Payload | Trigger |
+|-------|---------|---------|
+| `agent-status-changed` | `{ status, pid?, uptime? }` | Process lifecycle change |
+| `agent-token` | `{ text, done }` | Streaming chat response |
+| `agent-message` | `{ text, done }` | Complete chat message |
+| `tool-call` | `{ tool, args, id }` | Agent invokes a tool |
+| `tool-result` | `{ id, result, error? }` | Tool execution completes |
+| `memory-update` | `{ entries[], delta }` | Agent memory changed |
+| `scheduler-tick` | `{ tasks_due[] }` | Cron engine fires |
+| `gateway-status` | `{ gateway, status, error? }` | Gateway connection change |
+| `gateway-message` | `{ gateway, from, text }` | Incoming gateway message |
+| `update-available` | `{ component, version, notes }` | New update found |
+| `update-progress` | `{ component, percent, stage }` | Download/install progress |
+| `voice-input` | `{ text, confidence }` | Speech recognition result |
+| `voice-state` | `{ listening: bool }` | Microphone status |
+| `log-line` | `{ level, text, timestamp }` | New log entry |
+| `file-transfer-progress` | `{ name, percent }` | File upload/download progress |
 
 ---
 
@@ -204,6 +241,8 @@ After onboarding data is loaded, Rust runs pre-flight checks:
 | Git | `git --version` | Offer to install via Xcode CLI tools |
 | Network | Can reach registry / GitHub | Allow offline mode with cached skills |
 | Rosetta 2 (if Intel binary on Apple Silicon) | `arch -x86_64 true` | Offer to install Rosetta 2 |
+| Audio device | Microphone available (for voice) | Warn but allow skip |
+| Screen recording permission | Available (for screenshot) | Guide user to enable in System Preferences |
 
 Each check shows a green checkmark or a red X with a "Fix it" button. Progress persists across app restarts.
 
@@ -226,7 +265,8 @@ Rust backend handles all of this. UI shows a progress stepper with status messag
 4. **Install dependencies:** `venv/bin/pip install -r requirements.txt` (with `--no-index --find-links ./vendor` if vendor directory exists, to avoid GFW issues).
 5. **Write config:** Rust generates `config.yaml` from onboarding data + API key reference. Agent-specific configurations (skill pack selections, model settings, Chinese interface flag).
 6. **Install skill packs:** Download packs from registry, unpack to `~/lingxi/skills/`, verify checksums, generate manifest.
-7. **Verify installation:** Run `python3 -c "from hermes import core; print('OK')"` (or equivalent smoke test). If this fails, show error log and offer to retry.
+7. **Configure default profiles:** Write the six Roman Cohort profiles to `~/.lingxi/profiles.json`.
+8. **Verify installation:** Run `python3 -c "from hermes import core; print('OK')"` (or equivalent smoke test). If this fails, show error log and offer to retry.
 
 Each step shows: a spinner (in progress), green checkmark (done), or red X with retry button (failed). User cannot proceed until all steps pass.
 
@@ -235,9 +275,8 @@ Each step shows: a spinner (in progress), green checkmark (done), or red X with 
 1. Rust spawns Hermes agent as a child process.
 2. Sends an init message: `{ "type": "init", "config": "..." }` via stdin.
 3. Agent responds with `{ "type": "ready", "version": "0.1.0" }`.
-4. UI transitions from wizard to Chat interface.
-5. Agent sends a welcome message: "你好！我是你的Hermes智能助手。有什么可以帮你的？"
-6. Auto-start prompt appears: "是否希望开机自动启动Hermes？" (Would you like Hermes to start automatically when your computer starts?) — Yes / Not now.
+4. UI transitions from wizard to Dashboard.
+5. Auto-start prompt appears: "是否希望开机自动启动Hermes？" (Would you like Hermes to start automatically when your computer starts?) — Yes / Not now.
 
 ### Phase 7: Setup Complete
 
@@ -261,94 +300,716 @@ Visual style: Clean cards, large Chinese text, progress dots at top. Warm brand 
 2. **Profession** (if new) — Icon-based profession selector (教师, 律师, 市场营销, 程序员, 其他).
 3. **Details** (if new) — Free-text questions: "你平时花时间最多的三项工作是什么？" "你使用什么电脑？" "你之前用过AI工具吗？"
 4. **Tier** (if new) — Tier cards with pricing, features comparison. Selected tier highlights.
-5. **API Key** — Paste field + "如何获取密钥？" collapsible guide + Test button.
+5. **API Key** — Paste field + "如何获取密钥？" collapsible guide + Test button. Optionally add multiple provider keys.
 6. **Environment Check** — Animated progress list (see Phase 3 above). Each check animates in sequentially.
-7. **Installing** — Progress bar with status updates (Cloning... Installing dependencies... Configuring skills...).
-8. **Ready** — Success animation, "一切就绪！", button to open chat.
+7. **Installing** — Progress bar with status updates (Cloning... Installing dependencies... Configuring skills... Setting up profiles...).
+8. **Ready** — Success animation, "一切就绪！", button to open dashboard.
 
 State persistence: Wizard state saved to `~/.lingxi/wizard_state.json`. If app crashes mid-setup, it resumes from the last completed step on next launch.
+
+---
 
 ### 4.2 Dashboard
 
 Main landing page after setup. Layout: sidebar (compact navigation) + main content area.
 
-**Sidebar navigation:**
-- Dashboard icon
-- Chat icon (with notification badge for unread)
-- Skills icon
+**Sidebar navigation (all items):**
+- Dashboard icon (home)
+- Chat icon (with notification badge for unread messages)
+- Profiles icon (Roman Cohort)
+- Skills icon (with update badge)
+- Plugins icon
+- MCP icon
+- Gateways icon
+- Tasks icon (scheduled)
+- Memory icon
+- Files icon
 - Settings icon
 - Log viewer toggle (small icon in bottom-left corner)
 
 **Dashboard content:**
-- **Agent status card:** Large indicator dot (green = running, red = stopped, yellow = starting). "运行中" / "已停止" text. Start/Stop button. Uptime display.
-- **Quick stats row:** "今日消息数" (Today's messages), "本月使用量" (Monthly usage), "技能包数" (Installed skills).
+- **Agent status card:** Large indicator dot (green = running, red = stopped, yellow = starting). "运行中" / "已停止" text. Start/Stop button. Uptime display. Current profile badge.
+- **Quick stats row:** "今日消息数" (Today's messages), "本月使用量" (Monthly usage), "技能包数" (Installed skills), "记忆条目" (Memory entries), "活跃网关" (Active gateways).
+- **Active profile card:** Shows currently active Roman Cohort profile with avatar, name, brief description. Click to switch profiles.
 - **Recent interactions panel:** Last 5 chat sessions with timestamps and first few words. Click to open in Chat.
+- **Scheduled tasks widget:** Next 3 upcoming tasks with time and status.
+- **Gateway status bar:** Compact row of gateway icons with connection indicators.
 - **Update notification banner** (if available): "Hermes有新版本可用，点击更新" with update button.
-- **Quick action buttons:** "开始对话" (Start chat), "管理技能" (Manage skills), "检查更新" (Check for updates).
+- **Quick action buttons:** "开始对话" (Start chat), "管理技能" (Manage skills), "查看日程" (View tasks), "检查更新" (Check for updates).
+
+---
 
 ### 4.3 Chat
 
 Primary interaction surface. Full-height, no scroll on page level — only the message list scrolls.
 
 **Layout:**
-- **Header:** Agent name "Hermes智能助手" with status dot + model info dropdown (current model, e.g., "DeepSeek V3").
-- **Message list:** Vertically scrollable. Messages alternate: user (right-aligned, brand color bubble) / agent (left-aligned, gray bubble). Timestamps on hover.
+- **Header:** Agent name with current profile avatar/name + status dot. Profile dropdown to switch on-the-fly. Model selector dropdown (grouped by provider). Context panel toggle button.
+- **Message list:** Vertically scrollable. Messages alternate: user (right-aligned, brand color bubble) / agent (left-aligned, gray bubble, profile avatar). Timestamps on hover.
   - Agent messages support Markdown rendering (code blocks with copy button, tables, links, bullet lists).
+  - **Tool call cards** appear inline in message stream. Collapsed by default showing "🔧 正在使用 [tool_name]..." Expand to see full arguments, status, return value.
+  - **Web search results** appear as collapsible cards with title, snippet, source URL, favicon.
+  - **Image messages** rendered inline (generated or uploaded). Download button on generated images.
+  - **Voice messages** show waveform visualization with play button.
   - Loading indicator (three dots animation) while agent is generating.
   - Streaming incremental updates — text appears as agent generates it.
-- **Input area:** Bottom-fixed. Textarea (auto-grows to 4 lines max) + Send button (keyboard shortcut: Enter). File attachment button (attachments sent to agent for processing — documents, images if model supports vision).
-- **Context panel (collapsible):** Right-side drawer showing current conversation metadata — conversation ID, token count, attached skills, system prompt summary.
+- **Toolbar (above input):** Microphone button (voice input), Image generation button, Screenshot button, File attachment button, Web search toggle (globe icon, turns blue when active), Cancel button (appears during tool execution).
+- **Input area:** Bottom-fixed. Textarea (auto-grows to 4 lines max) + Send button (keyboard shortcut: Enter). Drag-and-drop zone for file uploads.
 
 **Conversation management:**
-- Chat sidebar (toggleable): list of past conversations with search.
-- New conversation button: clears context, starts fresh.
-- Conversation export button: saves as Markdown or JSON.
+- **Chat sidebar (toggleable):** List of past conversations with full-text search. Each entry shows: title (first message), date, message count, profile used. Right-click → rename, export, delete.
+- **New conversation button:** clears context, starts fresh. Profile selector modal appears.
+- **Conversation export button:** saves as Markdown or JSON.
+- **Per-conversation model override** in the context panel (collapsible right-side drawer).
 
-**Technical note on streaming:** Rust reads agent stdout line by line. Each line is a JSON object with `type: "token"` for streaming tokens or `type: "message"` for complete messages. The Rust backend emits Tauri events for each token. React accumulates tokens into the current message bubble. This avoids blocking the IPC channel on long responses.
+**Context panel (collapsible right-side drawer):**
+- Conversation metadata: ID, token count, created date
+- Current profile
+- Current model override (if any)
+- Attached skills
+- System prompt summary
+- Web search toggle
+
+**Technical note on streaming:** Rust reads agent stdout line by line. Each line is a JSON object with `type: "token"` for streaming tokens, `type: "message"` for complete messages, `type: "tool_call"` for tool invocations, `type: "tool_result"` for tool results, `type: "web_result"` for search results. The Rust backend emits Tauri events for each line. React accumulates tokens into the current message bubble and renders tool cards as structured UI elements.
+
+---
 
 ### 4.4 Settings
 
 **Tabs:**
 
-1. **General** — Theme (浅色 / 深色 / 跟随系统), Language (中文 / English), Font size (小 / 中 / 大).
-2. **API Keys** — List of configured keys with provider name, masked key preview, test button, delete button. "添加密钥" button to add a new key. Usage stats per key (tokens used this month).
-3. **Model** — Default model selection (dropdown), temperature slider, max tokens slider. Advanced: custom API endpoint URL.
-4. **Startup** — Toggle "开机自动启动Hermes" (Launch at login). Toggle "启动时自动运行Agent" (Start agent on app launch). Toggle "后台运行时保持Agent运行" (Keep agent running when window closed).
-5. **Agent** — Agent version display with "检查更新" button. Agent configuration path (read-only, copy button). Reset agent data button (destructive, double-confirm).
-6. **About** — App version, build number, licenses, "检查更新" button, feedback link.
+1. **General** — Theme (浅色 / 深色 / 跟随系统), Language (中文 / English), Font size (小 / 中 / 大), Accent color picker.
+2. **API Keys** — List of configured keys with provider name, masked key preview, test button, delete button. "添加密钥" button to add a new key (supports DeepSeek, OpenAI, Anthropic, Ollama, Custom). Usage stats per key (tokens used this month).
+3. **Model** — Provider-first model configuration:
+   - Provider cards (DeepSeek, OpenAI, Anthropic, Ollama, Custom) with enable/disable toggle.
+   - Each provider expands to show: API key selector, base URL override, available models list (with refresh button), default model selector.
+   - Provider-specific parameters (e.g., `reasoning_effort` for DeepSeek, `max_tokens`, `temperature` defaults).
+   - **Local Model tab:** Download manager for GGUF models. Integration with Ollama (auto-detect running instance, show available models, pull new models from UI).
+   - **Model routing rules:** Table of rules (e.g., "Use Claude for coding, DeepSeek for general chat"). Route by conversation topic, profile, or keyword.
+4. **Startup** — Toggle "开机自动启动Hermes" (Launch at login). Toggle "启动时自动运行Agent" (Start agent on app launch). Toggle "后台运行时保持Agent运行" (Keep agent running when window closed). Toggle "启动时恢复上次会话" (Restore last conversation on launch).
+5. **Voice** — Speech recognition engine (系统默认 / whisper.cpp 本地 / 云端API). TTS voice selection and speed slider. Push-to-talk keybinding. Input device selector. Output device selector. Test microphone button.
+6. **Web Search** — Default search provider (Google / Bing / Baidu / 自定义). API key for search service (SerpAPI, Bing, etc.). Default behavior toggle (search always enabled / ask each time).
+7. **Gateways** — Router-level gateway defaults. Which profile handles which gateway by default. Global enable/disable all gateways toggle.
+8. **Advanced** — 
+   - **"Edit config.yaml"** button → opens CodeMirror editor with YAML syntax highlighting and validation.
+   - **"Edit .env"** button → similar editor for environment variables.
+   - **"View Effective Config"** → merged read-only view of all config sources.
+   - **Config backups** — list of timestamped backups with restore button.
+   - **Custom CSS injector** — textarea for power user theme overrides.
+   - **Developer mode** — toggle raw terminal view, show tool console.
+9. **Agent** — Agent version display with "检查更新" button. Agent configuration path (read-only, copy button). Reset agent data button (destructive, double-confirm). Restart agent button.
+10. **About** — App version, build number, licenses, "检查更新" button, feedback link. "Export All Config" and "Import Config" buttons.
+
+---
 
 ### 4.5 Skill Manager
 
-**Installed skills view:**
-- Grid of skill pack cards. Each card shows: pack icon, name (Chinese), version, description (one line), status (active / update available / error).
-- Click card → detail panel: full description, included skills list (with trigger keywords), version history, update channel, "卸载" (Uninstall) button.
-- "检查更新" button at top — checks registry, shows update count badge.
+**Navigation:** Sidebar icon + Dashboard quick action.
 
-**Install new pack:**
-- "浏览技能商店" button → opens modal with pack registry browser.
-- Packs listed with name, author, rating (hypothetical), size, price (if paid).
+**Layout:** Left panel = category/status filter. Right panel = grid/list of skill packs.
+
+**Installed skills view:**
+- Grid of skill pack cards. Each card shows: pack icon, name (Chinese + English), version, description (one line), status badge (active / paused / update available / error).
+- **Enable/disable toggle** per skill (hot-swop via `reload_skills` command to agent).
+- Click card → detail panel: full description, included skills list (with trigger keywords), version history, update channel, "卸载" (Uninstall) button, "编辑" (Edit) button.
+- "检查更新" button at top — checks registry, shows update count badge.
+- **Enable All / Disable All** bulk actions.
+
+**Skill editing:**
+- "编辑" opens a code editor modal (CodeMirror) for the skill's prompt files and YAML/JSON manifest.
+- Users can edit system prompts, trigger keywords, model overrides per skill.
+- Changes saved to `~/lingxi/skills/<pack>/` directory. Hot-reload sent to agent.
+
+**Creating new skills:**
+- "新建技能" button → scaffold wizard: name, description, trigger keywords, prompt template, model override (optional).
+- Creates skill pack directory with template files.
+- Opens editor immediately for customization.
+
+**Skill store (browse/install):**
+- "浏览技能商店" button → opens full-page store browser.
+- Packs listed with name, author, rating, size, price, screenshots.
+- Search bar filters by name/description/category.
 - "安装" button → downloads, verifies, installs, shows confirmation toast.
-- Search bar filters packs by name/description.
+- "导入" button → select `.zip` or directory → validate manifest → install.
+
+**Skill testing (debug panel):**
+- "测试" button on skill detail → opens inline test panel.
+- Single text input: "向这个技能发送一条测试消息"
+- Shows the skill's raw response below (isolated from other skills/context).
+- Useful for prompt debugging.
 
 **Update flow:**
-- If updates available, badge appears on Skill Manager nav icon.
+- If updates available, badge appears on Skills nav icon.
 - "全部更新" (Update All) button or per-pack update.
-- Progress modal: downloading → verifying → installing → restarting agent.
-- After update, agent restart is automatic (Rust sends SIGTERM, waits for agent to acknowledge, relaunches).
+- Progress modal: downloading → verifying → installing → reloading skills.
+- After update, `reload_skills` command sent to agent (no restart needed if agent supports hot-reload).
 
-### 4.6 Log Viewer
+---
 
-Hidden behind a small icon in the sidebar bottom corner. Not visible in normal operation — the user should never need it. But when they do, it's one click away.
+### 4.6 Agent Profiles (Roman Cohort)
 
-- Scrollable, monospace, timestamps, log levels (color-coded: INFO green, WARN yellow, ERROR red, DEBUG gray).
-- Filter by level: dropdown (All / INFO / WARN / ERROR / DEBUG).
-- Search bar: filter log lines by text.
-- Copy button: copy entire log to clipboard.
-- Auto-scroll toggle: follow new logs.
-- Log retention: last 10,000 lines in memory, rotated to `~/.lingxi/logs/app.log` (max 10 MB, rotated daily).
-- Clear button: clear log display and rotate log file.
+**Navigation:** Dedicated sidebar icon. Also accessible from Chat header dropdown.
 
-Log source: Rust backend stdout/stderr, agent process stdout/stderr merged. Timestamps added by Rust before emitting to UI.
+**Layout:** Profile cards grid (2×3 or similar). Each card is visually distinct with Roman-themed styling.
+
+**The Six Default Profiles:**
+
+| Profile | Archetype | Model Preference | Temperature | Best For |
+|---------|-----------|-----------------|-------------|----------|
+| Cicero | Strategist / Analyst | DeepSeek (reasoning) | 0.3 | Analysis, strategy, planning |
+| Marcus | Executor / Operator | Claude (precise) | 0.2 | Task execution, code, workflows |
+| Augustus | Commander / Orchestrator | GPT-4 (balanced) | 0.5 | Multi-step orchestration, delegation |
+| Seneca | Tutor / Philosopher | DeepSeek (general) | 0.7 | Learning, explanation, reflection |
+| Enobarbus | Critic / Red Team | Claude (critical) | 0.9 | Code review, debugging, testing |
+| Turbo-Coder | Coding Specialist | Any fast model | 0.4 | Rapid code generation, scripting |
+
+**Profile card shows:**
+- Roman-inspired avatar (unique illustration per profile)
+- Name (Latin + Chinese translation)
+- Brief personality/role description (one line)
+- Current model assignment
+- Temperature setting
+- Status indicator (active / inactive)
+- "Activate" button (one-click switch)
+
+**Profile detail panel (click card):**
+- Full profile configuration:
+  - **System prompt** (editable, CodeMirror editor)
+  - **Model** selector (override from global model config)
+  - **Temperature** slider
+  - **Max tokens** input
+  - **Allowed tools** — checkboxes for which tools this profile can use (shell, file read/write, web search, code execution, image generation, MCP tools)
+  - **Skill overrides** — which skill packs are active for this profile
+  - **Gateways** — which gateways this profile handles
+- "Reset to Default" button (restore original Roman Cohort settings)
+- "Duplicate" button (create a custom profile from this template)
+- "Delete" button (only for custom profiles, not default six)
+
+**Creating custom profiles:**
+- "新建档案" (New Profile) button
+- Name, avatar selection (icon set), system prompt editor, model/temperature/tools config
+- Saved to `~/.lingxi/profiles.json`
+
+**Profile assignment:**
+- **Per-conversation:** Chat header dropdown lets user pick profile for the current conversation.
+- **Default profile:** Set in Settings → General.
+- **Routing rules:** Gateways and scheduled tasks can specify which profile handles them.
+
+---
+
+### 4.7 MCP Server Management
+
+**Navigation:** Dedicated sidebar icon.
+
+**Layout:** Server list table + detail panel.
+
+**Server list table:**
+| Server Name | Status | Transport | Tools Count | Last Heartbeat | Actions |
+|-------------|--------|-----------|-------------|----------------|---------|
+| filesystem | 🟢 Connected | stdio | 12 | 2s ago | Configure | Disconnect |
+| brave-search | 🟡 Starting | SSE | 0 | — | View Logs |
+| custom-tools | 🔴 Error | stdio | — | Failed | Edit | Retry |
+
+- Status indicators: 🟢 Connected / 🟡 Starting / 🔴 Error / ⚫ Disconnected
+- Click row → expand to show server details and available tools
+
+**Server detail panel:**
+- Server metadata: name, transport type, command/args (for stdio), URL (for SSE), environment variables
+- **Tool browser:** Expandable list of available tools from this MCP server. Each tool shows:
+  - Name and description
+  - Input schema (JSON Schema format, rendered as readable fields)
+  - Example usage
+  - "Test" button (invoke tool directly from UI)
+- **Connection log:** Timestamped events (connected, disconnected, error, tool call count)
+- **Edit / Delete / Reconnect / Disconnect** buttons
+
+**Add Server modal:**
+- Fields: Server name, Transport type (stdio / SSE)
+- If stdio: Command, Arguments (array), Working directory, Environment variables (key-value pairs)
+- If SSE: URL, Headers (optional)
+- Auto-connect toggle
+- Test connection button → attempts to start server and list tools
+
+**Data flow:** MCP server configurations stored in `~/.lingxi/mcp_servers.toml`. On agent spawn, Rust passes MCP config to agent via init message. Agent manages actual MCP connections. Rust monitors server status through agent status messages. UI shows status based on agent-reported MCP state.
+
+---
+
+### 4.8 Scheduled Tasks (Cron Jobs)
+
+**Navigation:** Dedicated sidebar icon (clock). Dashboard widget shows next 3 tasks.
+
+**Layout:** Task list + creation form modal + execution log.
+
+**Task list:**
+| Task Name | Schedule | Next Run | Last Run | Status | Profile |
+|-----------|----------|----------|----------|--------|---------|
+| 每日工作总结 | Every weekday 18:00 | Today 18:00 | Yesterday 18:00 ✅ | Active | Cicero |
+| 周报生成 | Every Mon 09:00 | Mon 09:00 | — | Active | Marcus |
+| 代码审查提醒 | Every 4h | 14:00 | 10:00 ✅ | Paused | Turbo-Coder |
+
+- Each row: name, friendly schedule description, next run time, last run (time + success/fail), active/paused toggle, profile badge
+- Click → expand detail: full task config, execution history
+
+**Task creation form (modal or page):**
+- **Name** — free text
+- **Description** — optional
+- **Schedule** — two modes:
+  - **Friendly mode:** Preset dropdown + time picker ("每天上午9点", "每星期一", "每个工作日", "每4小时", "自定义")
+  - **Expert mode:** Cron expression input with preview of next 5 run times
+- **Prompt/task** — textarea for what the agent should do (e.g., "总结今天的工作内容并生成明日计划")
+- **Profile assignment** — which Roman Cohort profile executes this task
+- **Model override** — optional, per-task model
+- **Skill overrides** — optional, which skills to enable for this task
+- **Notification** — toggle: show system notification when task completes
+- **Enable/disable** toggle
+
+**Execution log (per task):**
+- Table: timestamp, status (✅ / ❌), output snippet (first 200 chars), duration
+- "View Full Output" button → expand full agent response
+- "Retry" button on failed executions
+- "Run Now" button → immediately execute task regardless of schedule
+
+**Data flow:** Tasks stored in `~/.lingxi/tasks.json`. Rust Scheduler module runs a timer wheel in a background thread. At each scheduled time, it constructs a chat message `{ type: "chat", text: <task prompt>, profile: <assigned>, conversation_id: <task-specific> }` and sends it via the Stdio Bridge. Result is logged and notification emitted. UI receives `task-executed` event.
+
+---
+
+### 4.9 Gateway Management
+
+**Navigation:** Dedicated sidebar icon.
+
+**Layout:** Gateway cards grid + message log panel.
+
+**Gateway cards:**
+| Gateway | Status | Last Activity | Messages Today | Profile | Actions |
+|---------|--------|---------------|----------------|---------|---------|
+| Telegram | 🟢 Connected | 2 min ago | 15 | Cicero | Configure | Disconnect |
+| WeChat | 🟡 Connecting | — | — | — | Configure |
+| Discord | 🔴 Error | 1 hour ago | 3 | Marcus | View Log | Retry |
+| Email | ⚫ Disabled | — | — | — | Configure |
+| WhatsApp | ⚫ Not configured | — | — | — | Setup |
+
+- Each card: gateway icon/logo, name, large status indicator, last message timestamp, today's message count, assigned profile badge
+- "Configure" button → gateway-specific configuration form
+- "Connect/Disconnect" toggle
+- "View Log" → per-gateway message log
+
+**Gateway configuration forms (modal per gateway):**
+
+**Telegram:**
+- Bot Token (from BotFather)
+- Webhook URL (auto-generated if not using polling)
+- Allowed user IDs (whitelist, optional)
+- Polling interval
+
+**WeChat:**
+- Connection via Aura mini-program bridge
+- QR code display for linking
+- Auto-reconnect toggle
+
+**Discord:**
+- Bot Token
+- Channel IDs (comma-separated)
+- Command prefix (e.g., "/hermes")
+
+**Email:**
+- IMAP/SMTP credentials (OAuth2 recommended)
+- Polling interval
+- Signature detection
+- Auto-reply template
+
+**Gateway message log (panel or drawer):**
+- Real-time feed of messages flowing through this gateway
+- Each entry: timestamp, direction (incoming/outgoing), sender, message preview
+- Filter by direction, search by text
+- Useful for debugging gateway issues
+
+**Gateway routing settings:**
+- Table: Gateway → Profile mapping
+- "Use default profile" option
+- Per-gateway model override (optional)
+
+**Data flow:** Gateway configs stored in `~/.lingxi/gateways.toml`. Rust Gateway Bridge module maintains connection threads. Incoming messages from gateways are relayed to agent via Stdio Bridge as `{ type: "gateway_message", gateway: "telegram", from: "...", text: "..." }`. Agent responses are relayed back to the gateway by Rust. Status changes emitted as `gateway-status` events.
+
+---
+
+### 4.10 Voice I/O
+
+**Navigation:** Microphone button in Chat toolbar. Settings → Voice tab for configuration. No dedicated page — integrated into Chat.
+
+**Voice Input (Microphone):**
+- Microphone icon next to chat input area.
+- **Click to record:** Button turns red, waveform visualization appears above input area. Click again to stop.
+- **Push-to-talk:** Configurable hotkey (e.g., Cmd+Shift+M) in Settings → Voice.
+- **Processing:** Audio captured via Tauri plugin → sent to speech recognition engine.
+  - **Local mode (default):** whisper.cpp via Rust bindings. No internet required. ~1-2s processing time.
+  - **Cloud mode:** Uses configured speech API (e.g., OpenAI Whisper API). Requires internet.
+- **Result:** Transcribed text appears in chat input area. User can edit before sending.
+- **Confidence indicator:** Low-confidence transcriptions highlighted in yellow for user review.
+
+**Voice Output (Text-to-Speech):**
+- Speaker icon on each agent message bubble → click to play message aloud.
+- **Auto-play toggle** in Settings → Voice: automatically play new agent messages.
+- **Voice selection:** Multiple TTS voices available (system voices, cloud TTS voices).
+- **Speed control:** Playback speed slider (0.5x – 2.0x).
+- **Visualization:** Audio waveform or animated speaker icon during playback.
+- **Stop button** to interrupt playback.
+
+**Settings → Voice tab:**
+- **Speech recognition engine:** dropdown (System Default, Whisper.cpp Local, Cloud API)
+- **Whisper model:** model size selector (tiny ~75MB, base ~150MB, small ~500MB) with download status
+- **Cloud STT:** API provider selector + key
+- **TTS engine:** dropdown (System TTS, Edge TTS API, OpenAI TTS)
+- **Default voice:** voice name selector
+- **Speech speed:** slider
+- **Push-to-talk keybinding:** record button + key capture
+- **Input device:** system audio device selector
+- **Output device:** system audio device selector
+- **Test microphone** button → records 3 seconds, plays back
+
+**Implementation note:** Voice processing happens entirely in Rust backend (no Python dependency for STT/TTS). whisper.cpp compiled as a Rust library via `whisper-rs` crate. Audio capture uses `cpal` crate. TTS uses `tts` crate or HTTP calls to cloud TTS APIs.
+
+---
+
+### 4.11 Image Generation & Analysis
+
+**Navigation:** Image palette/brush icon in Chat toolbar. Generated images appear inline in chat.
+
+**Image Generation:**
+- Click brush/palette icon in chat toolbar → inline prompt builder appears.
+- Prompt textarea: "生成图片: [prompt]" (pre-filled shorthand).
+- Style dropdown: realistic, anime, oil painting, 3D render, pixel art, etc.
+- Size dropdown: 1024×1024, 1792×1024, 1024×1792 (or model-specific sizes).
+- Steps slider (for local diffusion models).
+- "生成" button → agent processes → image appears as message bubble.
+- Image bubble shows: image (rendered inline), "下载" (Download) button, "重新生成" (Regenerate) button, model/size metadata badge.
+- User can copy prompt to clipboard.
+
+**Image Upload & Analysis:**
+- Upload via file attachment button, drag-and-drop, or screenshot capture.
+- **Screenshot capture:** Camera icon in toolbar → uses Tauri screenshot plugin → captures selected region → uploads to chat automatically.
+- Uploaded images appear as message bubbles (thumbnail, expand to full size).
+- Image sent to agent with vision analysis prompt (if model supports vision) or to dedicated image analysis model.
+- Analysis results shown as structured text below the image (detected objects, text extraction, scene description).
+
+**Image Gallery (future, accessible from Dashboard quick action):**
+- Grid of all generated and uploaded images across conversations.
+- Search by date, prompt keywords.
+- Click → full-size view with metadata (generation parameters, source conversation).
+- Delete / export selected images.
+
+**Settings (indirect):** Image generation model configured per profile or in Settings → Model → Image Generation section.
+
+**Data flow:** Image generation request sent to agent as `{ type: "image_generate", prompt: "...", style: "...", size: "..." }`. Agent returns `{ type: "image_result", url: "data:image/png;base64,...", parameters: {...} }` or a reference URL. For local models, Rust may run the image generation model directly (ComfyUI integration) or relay to agent. Screenshots captured by Rust (Tauri plugin), base64-encoded, sent to agent.
+
+---
+
+### 4.12 Memory Management
+
+**Navigation:** Dedicated sidebar icon (brain). Dashboard widget shows memory count.
+
+**Layout:** Search bar + filter bar + entry list + stats header.
+
+**Header stats:**
+- Total memory entries
+- Last updated timestamp
+- Memory size estimate
+- "Clear All" button (destructive, double-confirm: "确定清除所有记忆？这个操作不可撤销。")
+
+**Entry list:**
+- Searchable by text (full-text across all keys and values).
+- Filterable by source (from which conversation), date range, category (user preference, fact, task, etc.).
+- Each entry shows:
+  - **Key** — identifier (e.g., `user.name`, `user.preferred_language`)
+  - **Value/summary** — truncated text, click to expand
+  - **Source** — link to originating conversation (if available)
+  - **Confidence** — bar indicator (high/medium/low)
+  - **Last accessed** — relative timestamp
+  - **Created** — absolute timestamp
+- Actions per entry: "编辑" (inline edit), "删除" (delete), "跳转到来源" (jump to source conversation).
+
+**Entry editing:**
+- Click "编辑" → inline editor opens: key (read-only or editable), value (textarea), category dropdown.
+- Save → Rust sends `{ "type": "system", "command": "update_memory", "key": "...", "value": "..." }` to agent.
+- Delete → confirmation → Rust sends `{ "type": "system", "command": "delete_memory", "key": "..." }`.
+
+**Adding memory manually:**
+- "添加记忆" button → form: key, value, category, source (optional).
+- Useful for explicitly teaching the agent facts about the user.
+
+**Data flow:** Rust requests full memory dump from agent via `{ "type": "system", "command": "get_memory" }`. Agent responds with `{ "type": "memory_dump", "entries": [...] }`. On each change (agent adds a memory during conversation), agent emits `{ "type": "memory_update", "entry": {...} }` which Rust forwards as a `memory-update` event. UI updates the list reactively.
+
+---
+
+### 4.13 Plugin System
+
+**Navigation:** Dedicated sidebar icon (puzzle piece). Distinct from Skills.
+
+**Layout:** Tabs: "已安装" (Installed) | "商店" (Store) | "开发" (Develop).
+
+**Installed plugins tab:**
+- List/card view of installed plugins.
+- Each card shows: plugin icon, name, version, author, description, status badge (active / inactive / update available / error).
+- **Enable/disable toggle** — activates/deactivates plugin without uninstalling.
+- Click card → detail panel:
+  - Full description, version history, permissions (what the plugin can access)
+  - **Configuration** section — plugin-specific settings (rendered from plugin's config schema)
+  - "卸载" (Uninstall) button
+  - "检查更新" button
+
+**Plugin store tab:**
+- Browse available plugins from registry.
+- Search bar + category filters.
+- Each listing: name, author, rating, downloads, size, price, screenshots.
+- "安装" button → download → verify signature → install.
+- Auto-update toggle per plugin.
+
+**Plugin development tab (for creators):**
+- "新建插件" (New Plugin) button → scaffold wizard:
+  - Plugin name, description, author, version
+  - Template selection (simple command plugin, tool plugin, event handler plugin, etc.)
+  - Generates directory in `~/lingxi/plugins/dev/<name>/` with template files
+- **Code editor** (CodeMirror) for editing plugin source files directly in the app.
+- **Test button** — runs plugin in isolated environment, shows output.
+- **Package button** — bundles plugin for distribution.
+- **Documentation** — link to plugin API docs.
+
+**Plugin vs Skill distinction (UI clarity):**
+- **Skills** = prompt/context packs (passive, modify agent behavior)
+- **Plugins** = executable code extensions (active, add new capabilities)
+- Both use the store/install/update pattern, but plugins need permission management and code editing tools.
+
+**Data flow:** Plugins run inside the Hermes agent's Python process, not in the desktop app. Desktop app manages plugin lifecycle by sending commands to agent (`enable_plugin`, `disable_plugin`, `install_plugin`, `uninstall_plugin`). Plugin configuration is passed to agent on spawn via init message. Plugin registry requests go through Rust → registry HTTP client → agent.
+
+---
+
+### 4.14 File Browser & Operations
+
+**Navigation:** Dedicated sidebar icon (folder). Accessible from Chat file attachment as well.
+
+**Layout:** Native file explorer feel: path bar + sidebar (quick locations) + file/directory grid + preview panel.
+
+**File browser:**
+- **Path bar:** Breadcrumb navigation with clickable segments. Shows current directory path.
+- **Quick locations sidebar:**
+  - Recent files
+  - `~/lingxi/` (workspace root)
+  - `~/Documents/`
+  - `~/Desktop/`
+  - `~/Downloads/`
+  - User's home directory
+  - "添加位置" (Add custom location)
+- **Main area:** Grid or list view (toggleable). Shows files and directories with: icon (file type), name, size, modified date.
+  - Click directory → navigate into it.
+  - Click file → preview (text files: inline code viewer; images: thumbnail; PDFs: summary; code: syntax highlighted).
+- **Search bar:** Search by filename within current directory and all subdirectories. Results appear in a dropdown overlay.
+- **Content search:** "搜索文件内容" toggle → enters content search mode. Uses ripgrep (via Rust) to search file contents. Results show file name, line number, matching snippet.
+- **Drag and drop:** Files can be dragged from the file browser into the Chat page to attach them.
+
+**File operations:**
+- Right-click context menu: Open in system app, Open in Finder, Copy path, Delete, Rename, Move to...
+- "上传到对话" (Upload to chat) button → sends selected file to agent.
+- "新建文件" / "新建文件夹" buttons.
+- Workspace files are opened in the code editor (CodeMirror) for editing.
+
+**Workspace tree:**
+- Collapsible tree view of `~/lingxi/` directory:
+  - agent/ (Hermes source)
+  - skills/ (installed skill packs)
+  - plugins/ (installed plugins)
+  - conversations/ (chat history files)
+  - config.yaml (quick edit link)
+  - .env (quick edit link)
+- Useful for power users who want direct access to configuration files.
+
+**Security:** File browser respects OS permissions. Cannot browse outside user's home directory by default. User can grant access to specific directories. Tauri's file system scope is configured in `tauri.conf.json`.
+
+**Data flow:** All file operations go through Rust commands. `invoke("list_directory", { path })`, `invoke("read_file", { path })`, `invoke("write_file", { path, content })`, `invoke("search_files", { query, root })`, `invoke("search_file_content", { query, root })`. Rust enforces path safety (prevents directory traversal, respects Tauri's FS scope).
+
+---
+
+### 4.15 Web Search & Browsing
+
+**Navigation:** Toggle in Chat toolbar (globe icon). Settings → Web Search tab for configuration.
+
+**Chat integration:**
+- **Globe toggle** in chat input toolbar: click to enable/disable web search for the next message. Blue = enabled, gray = disabled.
+- **Per-message toggle:** User can enable search for a single query, and it auto-disables after.
+- **Search results display:** When agent performs a web search, results appear as structured inline cards in the message stream.
+  - Each card shows: title (clickable link), snippet (2-3 lines of text), source domain with favicon, timestamp.
+  - Cards are collapsible (show summary by default, expand for full snippet).
+  - Cards can be clicked to open the page in the system browser.
+- **Source citations:** Agent responses that use web search results include numbered citations like `[1]` that link to the source cards.
+
+**Settings → Web Search tab:**
+- **Default search provider:** dropdown (Google, Bing, Baidu, DuckDuckGo, 自定义)
+- **Custom search endpoint:** URL template with `{query}` placeholder
+- **API Key:** for providers that require one (SerpAPI, Bing Search API, etc.)
+- **Default behavior:** "每次询问" (Ask each time) / "始终开启" (Always on) / "始终关闭" (Always off)
+- **Max results:** slider (3 / 5 / 10)
+- **Search scope:** "全网" (Web-wide) / "指定站点" (Specific sites, comma-separated)
+
+**Advanced: Web page preview (future):**
+- Agent responses that contain URLs show a "预览" (Preview) button.
+- Click opens a lightweight WebView preview within the app (not a full browser, just a rendered snapshot).
+- Useful for quickly checking link content without leaving the app.
+
+**Data flow:** Web search toggle state sent with each chat message: `{ type: "chat", text: "...", web_search: true }`. Agent performs search using its configured web search tool. Search results returned as `{ type: "web_results", results: [...], query: "..." }`. Agent's final response includes citations referencing these results.
+
+---
+
+### 4.16 Export / Import
+
+**Navigation:** Settings → About tab (full config). Chat page (per-conversation). Context menus.
+
+**Export options:**
+
+**Per-conversation export:**
+- Chat sidebar right-click → Export
+- Formats: Markdown (.md), JSON (.json), Plain Text (.txt)
+- Options: Include timestamps, Include metadata (profile, model, token count), Include tool call details
+- Save dialog (Tauri native save dialog)
+
+**Bulk conversation export:**
+- Chat sidebar → "导出全部" button at top
+- Select conversations (checkboxes) → "导出选中"
+- Output: single `.zip` containing individual files
+- Naming: `conversation-YYYY-MM-DD_HHMMSS-title.md`
+
+**Full config export:**
+- Settings → About → "导出全部配置"
+- Exports to a single `.zip` file:
+  - `profiles.json` (profile definitions, no API keys)
+  - `settings.toml` (app preferences)
+  - `gateways.toml` (gateway configs, no tokens — exported as placeholders: `BOT_TOKEN = "<EXPORTED_MASKED>"`)
+  - `mcp_servers.toml` (MCP server configs)
+  - `tasks.json` (scheduled tasks)
+  - `skills_manifest.json` (list of installed skills, versions)
+  - `plugins_manifest.json` (list of installed plugins, versions)
+- **API keys are NEVER exported** — placeholder tokens only
+- User is warned: "API密钥不会包含在导出文件中。导入后需要重新配置API密钥。"
+
+**Profile export:**
+- Profile detail panel → "导出此档案"
+- Single `.json` file with full profile configuration (no API keys)
+- Useful for sharing profiles between machines
+
+**Skill/Plugin export:**
+- Skill/Plugin detail → "导出" button
+- Packages the skill/plugin into a transferable `.zip` file
+- Includes manifest + all files
+
+**Import options:**
+
+**Full config import:**
+- Settings → About → "导入配置"
+- File picker → select previously exported `.zip`
+- Validation: check format version, schema validity
+- Merge strategy options: "替换全部" (Replace all) / "合并" (Merge, keep existing on conflict)
+- User is prompted to re-enter API keys for any masked placeholders
+- Summary screen: "将导入 3 个档案、2 个网关配置、5 个定时任务。确认？"
+
+**Conversation import:**
+- Drag-and-drop a `.json` or `.md` file onto the chat sidebar
+- Or: Chat sidebar → "导入对话" button → file picker
+- Imported conversation appears in the sidebar with an "(导入)" tag
+
+**Skill/Plugin import:**
+- Skill Manager → "导入" button → select `.zip` or directory
+- Validation, confirmation, installation
+
+---
+
+### 4.17 Error Logs & Debugging
+
+**Navigation:** Small icon in sidebar bottom corner (bug or terminal icon). Not visible in normal operation — one click away.
+
+**Layout:** Full-height log viewer panel (slides up from bottom or opens as overlay).
+
+**Log viewer:**
+- Scrollable, monospace font, line-wrapped (toggleable).
+- Each line: timestamp (ISO 8601) + log level badge + message.
+- Log levels color-coded: DEBUG gray, INFO green, WARN yellow, ERROR red, FATAL white-on-red.
+- **Filter bar:**
+  - Level dropdown: All / DEBUG / INFO / WARN / ERROR / FATAL
+  - Search input: filter by text (case-insensitive)
+  - Date range picker (optional, for browsing rotated logs)
+- **Controls:**
+  - Auto-scroll toggle (follow new logs, default on)
+  - Pause button (stop auto-scroll to examine historical logs)
+  - Copy button: "复制全部可见" (Copy all visible) / "复制选中行"
+  - Save button: export current filtered view to file
+  - Clear button: clear display and rotate log file
+- **Log source tabs:**
+  - "全部" (All) — merged app + agent logs
+  - "应用" (App) — Rust backend logs only
+  - "Agent" — Hermes agent stdout/stderr only
+  - "网络" (Network) — filtered HTTP/API call logs
+  - "工具" (Tools) — tool execution logs only
+
+**Crash report:**
+- When agent crashes unexpectedly, a "发送崩溃报告" (Submit crash report) button appears.
+- Includes: recent log lines (last 500), agent version, OS version, crash counter.
+- User can add description before sending.
+- Sent to crash reporting endpoint (with user consent).
+
+**Health metrics (Dashboard widget):**
+- Agent response time (average, last 24h)
+- Token usage per day (chart)
+- Error rate (percentage of requests that failed)
+- Tool execution count (per tool type)
+- Memory usage trend
+
+**Data flow:** Rust backend maintains a ring buffer of the last 10,000 log lines in memory. Logs are also written to `~/.lingxi/logs/app.log` (rotated daily, max 10 MB). Log lines are emitted to UI via `log-line` events for real-time display. On startup, Rust replays the last 500 log lines to populate the viewer.
+
+---
+
+### 4.18 Configuration Editor
+
+**Navigation:** Settings → Advanced tab. Quick access from File browser → workspace tree → click config.yaml/.env.
+
+**Layout:** Code editor with sidebar for file navigation.
+
+**Editable files:**
+- `config.yaml` — Hermes agent configuration
+- `.env` — environment variables
+- `profiles.json` — agent profiles
+- `gateways.toml` — gateway configurations
+- `mcp_servers.toml` — MCP server configurations
+- `tasks.json` — scheduled tasks
+- Any file in `~/lingxi/` via File browser → right-click → "编辑"
+
+**Code editor features (CodeMirror 6):**
+- Syntax highlighting for YAML, TOML, JSON, Markdown, Python, Shell
+- Line numbers
+- YAML/JSON validation (schema-aware for config files)
+- Schema-aware autocomplete for `config.yaml` (field names, valid values)
+- Find and replace
+- Undo/redo (in-memory, no auto-save)
+- **Save** button (Ctrl+S) → validation check before writing
+- **Discard changes** warning if unsaved edits
+
+**Configuration validation:**
+- On save, Rust validates:
+  - YAML/TOML/JSON syntax correctness
+  - Schema conformance (known fields, types)
+  - Deprecated key warnings
+  - Conflicting settings detection
+- Validation errors shown inline (red underline) and in a summary panel
+- Invalid configs are NOT saved — user must fix errors first
+
+**Config backups:**
+- Every time a config file is saved, Rust creates a timestamped backup: `config.yaml.2026-05-26T10:00:00Z.bak`
+- Backups stored in `~/.lingxi/config-backups/`
+- Settings → Advanced → "配置备份" section shows list of backups with restore button
+- Automatic cleanup: keep last 30 backups, delete older ones
+
+**Theme/Skin editor:**
+- Settings → General → Accent color picker (preset palette + custom color input)
+- Font family selector (system fonts, with CJK font recommendations: "霞鹜文楷", "思源黑体", "Noto Sans CJK")
+- Font size slider
+- Border radius slider (UI corner roundness)
+- Dark mode / Light mode / Follow system
+- **Custom CSS** textarea in Advanced tab (power users; injected into WebView at runtime)
 
 ---
 
@@ -368,6 +1029,11 @@ HermesAgentManager {
     last_crash_time: Instant,
     heartbeat_timer: Timer,
     stdout_reader: JoinHandle<()>,
+    // Extended state
+    current_profile: String,
+    mcp_servers: HashMap<String, McpServerState>,
+    gateway_connections: HashMap<String, GatewayState>,
+    scheduler: SchedulerEngine,
 }
 ```
 
@@ -377,6 +1043,7 @@ Spawn strategy:
 - Environment: `PATH`, `PYTHONPATH`, `HERMES_CONFIG_DIR=~/lingxi/`, `HERMES_LOG_LEVEL=info`
 - Stdio: piped (stdin for commands, stdout for responses, stderr merged with stdout for logging)
 - Process group: set process group ID so killing the group kills all children.
+- Pass configuration on init: profiles, MCP servers, gateways, plugin list, memory state.
 
 ### Communication Protocol
 
@@ -384,10 +1051,18 @@ JSON-line protocol over stdin/stdout:
 
 **App → Agent (stdin):**
 ```json
-{ "type": "chat", "text": "你好", "conversation_id": "uuid" }
+{ "type": "chat", "text": "你好", "conversation_id": "uuid", "profile": "cicero", "web_search": true }
 { "type": "system", "command": "reload_skills" }
+{ "type": "system", "command": "get_memory" }
+{ "type": "system", "command": "update_memory", "key": "user.name", "value": "张三" }
+{ "type": "system", "command": "delete_memory", "key": "user.temp_preference" }
+{ "type": "system", "command": "enable_plugin", "name": "code_analyzer" }
+{ "type": "system", "command": "disable_plugin", "name": "code_analyzer" }
 { "type": "system", "command": "status" }
 { "type": "system", "command": "shutdown", "reason": "user_quit" }
+{ "type": "gateway_message", "gateway": "telegram", "from": "user123", "text": "你好", "conversation_id": "uuid" }
+{ "type": "task_execute", "task_id": "daily_summary", "text": "总结今天的工作内容" }
+{ "type": "image_generate", "prompt": "一只猫", "style": "anime", "size": "1024x1024" }
 ```
 
 **Agent → App (stdout):**
@@ -395,9 +1070,19 @@ JSON-line protocol over stdin/stdout:
 { "type": "token", "text": "你", "done": false }
 { "type": "token", "text": "好", "done": false }
 { "type": "message", "text": "你好！有什么可以帮你的？", "done": true }
-{ "type": "status", "status": "ready", "version": "0.1.0" }
+{ "type": "tool_call", "tool": "get_weather", "args": {"city": "北京"}, "id": "call_1" }
+{ "type": "tool_result", "id": "call_1", "result": "25°C, 晴" }
+{ "type": "web_results", "query": "北京天气", "results": [{"title": "...", "snippet": "...", "url": "..."}] }
+{ "type": "memory_dump", "entries": [{"key": "user.name", "value": "张三", "source": "...", "confidence": "high"}] }
+{ "type": "memory_update", "entry": {"key": "user.city", "value": "北京", "source": "chat_abc"} }
+{ "type": "image_result", "url": "data:image/png;base64,...", "parameters": {"model": "stable-diffusion", "style": "anime"} }
+{ "type": "gateway_ready", "gateway": "telegram", "status": "connected" }
+{ "type": "gateway_error", "gateway": "discord", "error": "Invalid token" }
+{ "type": "task_result", "task_id": "daily_summary", "status": "success", "output": "..." }
+{ "type": "mcp_status", "server": "filesystem", "status": "connected", "tools_count": 12 }
+{ "type": "status", "status": "ready", "version": "0.1.0", "profile": "cicero" }
 { "type": "error", "code": "API_ERROR", "message": "..." }
-{ "type": "heartbeat", "timestamp": 1234567890 }
+{ "type": "heartbeat", "timestamp": 1234567890, "uptime_seconds": 3600 }
 ```
 
 ### Heartbeat & Health Check
@@ -411,23 +1096,31 @@ JSON-line protocol over stdin/stdout:
   5. If crash counter < 3, restart with exponential backoff (1s, 5s, 30s).
   6. If crash counter ≥ 3 within 10 minutes, set status to ERROR, notify user.
 - Crash counter resets to 0 after 10 minutes of continuous uptime.
+- Heartbeat includes agent health metrics (memory usage, response time average, active gateway count).
 
 ### Shutdown Sequence
 
 1. User quits app (or closes window if "keep running in background" is off).
 2. Rust sends `{ "type": "system", "command": "shutdown" }` to agent via stdin.
-3. Rust sends SIGTERM.
-4. Rust waits up to 5 seconds for process to exit.
-5. If process still alive, sends SIGKILL.
-6. Rust writes final state to config: `last_agent_status: running | stopped`.
-7. App exits.
+3. Rust saves scheduler state (pause/resume tasks).
+4. Rust sends SIGTERM.
+5. Rust waits up to 5 seconds for process to exit.
+6. If process still alive, sends SIGKILL.
+7. Rust writes final state to config: `last_agent_status: running | stopped`.
+8. App exits.
 
 ### Crash Recovery
 
 - Auto-restart with backoff as described above.
-- When agent restarts after crash, Rust sends a system message to reinitialize: `{ "type": "system", "command": "load_skills" }` and `{ "type": "system", "command": "restore_conversation", "id": "..." }`.
+- When agent restarts after crash, Rust sends system messages to reinitialize:
+  - `{ "type": "system", "command": "load_skills" }`
+  - `{ "type": "system", "command": "restore_conversation", "id": "..." }`
+  - `{ "type": "system", "command": "init_mcp" }` (reconnect MCP servers)
+  - `{ "type": "system", "command": "init_gateways" }` (reconnect gateways)
+  - `{ "type": "system", "command": "resume_tasks" }` (resume scheduler)
 - UI shows a notification: "Agent已重新启动" (Agent has restarted) with a dismiss button.
 - If crash happened during chat, the conversation is preserved up to the last complete message pair.
+- Gateway connections are restored automatically (Rust re-sends gateway config after agent restart).
 
 ### Architecture Decision: Why Not Systemd / Launchd
 
@@ -457,7 +1150,9 @@ desktop/
 │   │   ├── config/
 │   │   │   ├── mod.rs
 │   │   │   ├── store.rs            # Config read/write, keychain integration
-│   │   │   └── migration.rs        # Config schema migration between versions
+│   │   │   ├── migration.rs        # Config schema migration between versions
+│   │   │   ├── profiles.rs         # Profile CRUD (Roman Cohort + custom)
+│   │   │   └── gateway.rs          # Gateway configuration management
 │   │   ├── installer/
 │   │   │   ├── mod.rs
 │   │   │   ├── env_check.rs        # Pre-flight environment validation
@@ -469,6 +1164,27 @@ desktop/
 │   │   │   ├── agent_updater.rs    # Agent version updates
 │   │   │   ├── skill_updater.rs    # Skill pack diff downloads
 │   │   │   └── registry_client.rs  # HTTP client for pack/version registry
+│   │   ├── scheduler/
+│   │   │   ├── mod.rs
+│   │   │   ├── engine.rs           # Timer wheel for cron task scheduling
+│   │   │   ├── task_store.rs       # Task CRUD, persistence in tasks.json
+│   │   │   └── executor.rs         # Builds chat messages from tasks, sends to agent
+│   │   ├── gateway/
+│   │   │   ├── mod.rs
+│   │   │   ├── telegram.rs         # Telegram bot client (polling or webhook)
+│   │   │   ├── discord.rs          # Discord bot client
+│   │   │   ├── email.rs            # IMAP/SMTP client
+│   │   │   └── bridge.rs           # Routes gateway messages to/from agent
+│   │   ├── voice/
+│   │   │   ├── mod.rs
+│   │   │   ├── stt.rs              # Speech-to-text (whisper.cpp, cloud API)
+│   │   │   ├── tts.rs              # Text-to-speech (system, cloud API)
+│   │   │   └── capture.rs          # Microphone capture (cpal)
+│   │   ├── filesystem/
+│   │   │   ├── mod.rs
+│   │   │   ├── browser.rs          # Directory listing, file metadata
+│   │   │   ├── search.rs           # File name + content search (ripgrep)
+│   │   │   └── watcher.rs          # File system change notifications
 │   │   ├── autostart/
 │   │   │   ├── mod.rs
 │   │   │   ├── macos.rs            # launchd plist management
@@ -492,27 +1208,65 @@ desktop/
 │   │   ├── Welcome.tsx             # Setup wizard (multi-step)
 │   │   ├── Dashboard.tsx           # Agent status, stats, recent chats
 │   │   ├── Chat.tsx                # Chat interface + conversation sidebar
-│   │   ├── Settings.tsx            # Settings tabs
-│   │   └── SkillManager.tsx        # Installed skills + pack store
+│   │   ├── Settings.tsx            # Settings tabs (general, api keys, model, voice, web search, gateways, advanced, agent, about)
+│   │   ├── SkillManager.tsx        # Installed skills + pack store + editor + test panel
+│   │   ├── Profiles.tsx            # Roman Cohort profiles grid + detail editor
+│   │   ├── McpManager.tsx          # MCP server list + detail + add/edit modal
+│   │   ├── Tasks.tsx               # Scheduled tasks list + creation form + execution log
+│   │   ├── Gateways.tsx            # Gateway cards + configuration + message log
+│   │   ├── Memory.tsx              # Memory viewer, search, edit, add
+│   │   ├── Plugins.tsx             # Plugin manager (installed, store, develop)
+│   │   ├── FileBrowser.tsx         # File explorer, search, preview
+│   │   └── LogViewer.tsx           # Log viewer overlay
 │   ├── components/
 │   │   ├── Sidebar.tsx
 │   │   ├── AgentStatusIndicator.tsx
 │   │   ├── MessageBubble.tsx
 │   │   ├── MessageList.tsx
 │   │   ├── ChatInput.tsx
+│   │   ├── ToolCallCard.tsx        # Inline tool invocation display
+│   │   ├── WebSearchCard.tsx       # Inline web search result card
+│   │   ├── ImageMessage.tsx        # Image display in chat (generated/uploaded)
+│   │   ├── VoiceMessage.tsx        # Voice message with waveform and play button
+│   │   ├── ProfileBadge.tsx        # Profile avatar + name badge
+│   │   ├── ModelSelector.tsx       # Provider-grouped model dropdown
 │   │   ├── WizardStep.tsx
 │   │   ├── SkillCard.tsx
-│   │   ├── LogViewer.tsx
+│   │   ├── ProfileCard.tsx         # Roman Cohort profile card
+│   │   ├── McpServerRow.tsx
+│   │   ├── TaskRow.tsx
+│   │   ├── GatewayCard.tsx
+│   │   ├── MemoryEntry.tsx
+│   │   ├── PluginCard.tsx
+│   │   ├── FileExplorer.tsx
+│   │   ├── CodeEditor.tsx          # CodeMirror wrapper for config/skill editing
 │   │   ├── MarkdownRenderer.tsx
-│   │   └── UpdateBanner.tsx
+│   │   ├── UpdateBanner.tsx
+│   │   └── ConfirmDialog.tsx       # Reusable destructive action confirmation
 │   ├── stores/
 │   │   ├── agentStore.ts           # Zustand — agent status, process state
-│   │   ├── chatStore.ts            # Zustand — conversations, messages, streaming
+│   │   ├── chatStore.ts            # Zustand — conversations, messages, streaming, tool calls
+│   │   ├── profileStore.ts         # Zustand — profiles list, active profile
 │   │   ├── settingsStore.ts        # Zustand — preferences, API keys (masked)
-│   │   └── updateStore.ts          # Zustand — update availability, progress
+│   │   ├── updateStore.ts          # Zustand — update availability, progress
+│   │   ├── gatewayStore.ts         # Zustand — gateway connections, messages
+│   │   ├── taskStore.ts            # Zustand — scheduled tasks, execution log
+│   │   ├── memoryStore.ts          # Zustand — memory entries, search
+│   │   ├── mcpStore.ts             # Zustand — MCP server states, tool lists
+│   │   ├── pluginStore.ts          # Zustand — plugin list, store catalog
+│   │   └── fileStore.ts            # Zustand — file browser state, current directory
 │   ├── hooks/
 │   │   ├── useAgent.ts             # Tauri event listeners for agent status
-│   │   ├── useChat.ts              # Tauri invoke + event for chat
+│   │   ├── useChat.ts              # Tauri invoke + event for chat, tool calls
+│   │   ├── useProfiles.ts          # Profile CRUD via Tauri invoke
+│   │   ├── useGateways.ts          # Gateway connect/disconnect, message feed
+│   │   ├── useTasks.ts             # Task CRUD, scheduler events
+│   │   ├── useMemory.ts            # Memory dump, update, delete
+│   │   ├── useMcp.ts               # MCP server status, tool listing
+│   │   ├── usePlugins.ts           # Plugin lifecycle management
+│   │   ├── useFileBrowser.ts       # File operations, directory listing
+│   │   ├── useVoice.ts             # Microphone, speech recognition events
+│   │   ├── useLogger.ts            # Log line events, filter state
 │   │   └── useAutoStart.ts         # Tauri invoke for auto-start toggle
 │   ├── lib/
 │   │   ├── tauri.ts                # Typed Tauri invoke wrappers
@@ -535,10 +1289,15 @@ desktop/
 ### User Data Directory (Runtime)
 
 ```
-~/.lingxi/                          # All user-local data (XCOM_DATA standard)
+~/.lingxi/                          # All user-local data (XDG_DATA standard)
 ├── config.toml                     # App preferences (auto-start, theme, window state)
 ├── secrets.toml                    # Encrypted API keys (keychain-backed on macOS)
 ├── wizard_state.json               # Setup wizard progress (deleted after completion)
+├── profiles.json                   # Agent profiles (Roman Cohort + custom)
+├── gateways.toml                   # Gateway configurations
+├── mcp_servers.toml                # MCP server configurations
+├── tasks.json                      # Scheduled tasks
+├── plugins.json                    # Plugin manifest (installed versions, enabled state)
 ├── agent/
 │   ├── venv/                       # Python virtual environment (created by installer)
 │   ├── src/                        # Hermes agent source (cloned from registry)
@@ -555,12 +1314,22 @@ desktop/
 │   │   ├── pack.json
 │   │   └── prompts/
 │   └── ...
+├── plugins/                        # Installed executable plugins
+│   ├── registry.json
+│   ├── code_analyzer/
+│   │   ├── manifest.json
+│   │   └── main.py
+│   └── ...
 ├── conversations/                  # Chat history (JSON lines, one file per session)
 │   ├── 2026-05-26_abc123.json
 │   └── ...
+├── config-backups/                 # Timestamped config file backups
+│   ├── config.yaml.2026-05-26T10:00:00Z.bak
+│   └── ...
 └── logs/
     ├── app.log                     # Desktop app logs (Rust → file)
-    └── agent.log                   # Hermes agent logs (stdout/stderr capture)
+    ├── agent.log                   # Hermes agent logs (stdout/stderr capture)
+    └── scheduler.log               # Task execution logs
 ```
 
 ---
@@ -604,14 +1373,14 @@ Update flow:
 - After update, agent sends `{ "type": "status", "version": "1.2.0" }` on next heartbeat.
 - UI shows "Agent已更新到v1.2.0" toast notification.
 
-### Skill Pack Updates
+### Skill Pack & Plugin Updates
 
 - Checked on the same 7-day cadence as agent updates.
 - Registry returns diff URL (changed files only) to minimize download size.
 - Applied while agent is running (Rust sends `reload_skills` command after unpacking).
-- If agent does not support hot-reload, brief restart (SIGTERM + relaunch, ~2 second interruption).
-- Minor/patch updates are applied silently. Major updates require user confirmation.
-- Confirmation dialog shows: "教师技能包有重大更新（v2.0），新增了教案自动批改功能。是否更新？"
+- If agent does not support hot-reload for skills, brief restart (~2 second interruption).
+- Minor/patch updates applied silently. Major updates require user confirmation.
+- Plugin updates follow the same pattern: download, verify, stop plugin, update files, restart plugin.
 
 ### Offline/No-Network Mode
 
@@ -630,23 +1399,27 @@ Update flow:
 - Keys are never exposed to the WebView (React never sees the raw key).
 - The UI shows only a masked preview: "sk-****-abcd".
 - On app quit, the in-memory key reference is dropped.
+- Export/Import functions NEVER include raw keys — only masked placeholders.
 
 ### File Permissions
 
 - `~/.lingxi/` is created with `700` permissions (owner-only read/write/execute).
 - Log files are rotated and never contain unredacted API keys (Rust scrubs keys from logs before writing).
+- Conversation files are `600` (owner-only read/write).
 
 ### Process Isolation
 
 - Hermes agent runs as a child process of the desktop app, not as a system service.
 - The agent has no network listening ports (it communicates only via stdin/stdout to the parent process).
 - If the desktop app is not running, the agent is not running (unless user explicitly configured background mode).
+- Gateway connections are maintained by Rust (not the agent) for isolation.
 
 ### Update Security
 
 - Update manifests and packages are signed with a private key.
 - Signature is verified by Tauri's updater before applying.
 - Agent updates are verified by checksum SHA-256 from the registry (over HTTPS).
+- Plugin downloads are verified by signature or checksum.
 
 ### WebView Security
 
@@ -654,3 +1427,10 @@ Update flow:
 - No external network requests from the WebView — all data fetching goes through Rust.
 - No arbitrary file access from the WebView — file operations are mediated by Rust commands.
 - Open external links in the system browser (not in the WebView) to prevent UI redressing.
+
+### Gateway Security
+
+- Bot tokens for Telegram/Discord stored in encrypted secrets store, never in config files.
+- Email credentials stored in keychain.
+- Gateway tokens masked in UI and excluded from exports.
+- Rate limiting on outgoing gateway messages to prevent abuse.
