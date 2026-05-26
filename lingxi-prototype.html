@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<title>灵犀AI — 你的专属AI助手</title>
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{--green:#07C160;--green-dark:#06AD56;--green-light:#E8F8E8;--green-pale:#F0FFF0;--bg:#f5f5f5;--card:#fff;--text:#191919;--text2:#888;--text3:#bbb;--border:#e9e9e9;--radius:12px;--shadow:0 1px 4px rgba(0,0,0,.06);--font:-apple-system,BlinkMacSystemFont,"SF Pro Display","PingFang SC","Helvetica Neue",sans-serif}
+body{font-family:var(--font);background:#e5e5e5;display:flex;justify-content:center;min-height:100vh;color:var(--text);-webkit-font-smoothing:antialiased}
+.app{width:100%;max-width:414px;min-height:100vh;background:var(--bg);position:relative;display:flex;flex-direction:column;box-shadow:0 0 30px rgba(0,0,0,.1)}
+/* Header */
+.header{background:var(--green);padding:44px 16px 12px;color:#fff;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.header-l{display:flex;align-items:center;gap:10px}
+.header-logo{width:28px;height:28px;background:#fff;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:var(--green)}
+.header-title{font-size:17px;font-weight:600}
+.header-status{font-size:11px;padding:2px 8px;border-radius:10px;background:rgba(255,255,255,.2)}
+.header-sub{font-size:10px;opacity:.7;margin-top:-1px}
+/* Tab Content */
+.content{flex:1;overflow-y:hidden;padding:0;-webkit-overflow-scrolling:touch;position:relative}
+.tab-pane{display:none;padding:12px 12px 0;animation:fadeIn .25s;height:100%;overflow-y:auto}
+.tab-pane.active{display:block;padding-bottom:60px}
+.tab-pane#tabChat.active{padding-bottom:50px;display:flex;flex-direction:column}
+.tab-pane#tabChat.active .chat-wrap{flex:1;overflow-y:auto;padding:12px 12px 0}
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+/* Tab Bar */
+.tabbar{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:414px;background:#fff;border-top:1px solid var(--border);display:flex;z-index:100;padding-bottom:env(safe-area-inset-bottom,0);flex-shrink:0}
+.tab-item{flex:1;text-align:center;padding:6px 0 4px;cursor:pointer;transition:.15s;position:relative}
+.tab-item svg{display:block;margin:0 auto 2px;width:24px;height:24px;fill:var(--text3)}
+.tab-item span{font-size:10px;color:var(--text3);display:block;line-height:1.2}
+.tab-item.active svg{fill:var(--green)}
+.tab-item.active span{color:var(--green)}
+.tab-badge{position:absolute;top:2px;right:50%;transform:translateX(18px);background:#FF3B30;color:#fff;font-size:9px;padding:1px 5px;border-radius:8px;font-weight:600}
+/* Cards */
+.card{background:var(--card);border-radius:var(--radius);padding:16px;margin-bottom:10px;box-shadow:var(--shadow)}
+.card-title{font-size:15px;font-weight:600;margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.card-sub{font-size:11px;color:var(--text2);margin-bottom:12px;line-height:1.5}
+/* Buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;padding:10px 24px;border-radius:8px;font-size:15px;font-weight:500;border:none;cursor:pointer;transition:.15s;gap:4px;font-family:var(--font)}
+.btn-primary{background:var(--green);color:#fff}
+.btn-primary:hover{background:var(--green-dark)}
+.btn-outline{background:transparent;color:var(--green);border:1.5px solid var(--green)}
+.btn-outline:hover{background:var(--green-pale)}
+.btn-block{width:100%}
+.btn-lg{padding:14px 32px;font-size:17px;font-weight:600;border-radius:10px}
+.btn-sm{padding:6px 14px;font-size:12px}
+.btn-danger{color:#FF3B30;border-color:#FF3B30}
+.btn-disabled{opacity:.5;pointer-events:none}
+/* Option Grid */
+.opt-grid{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+.opt-btn{padding:10px 18px;border-radius:8px;border:1.5px solid var(--border);background:#fff;font-size:14px;cursor:pointer;transition:.15s;font-family:var(--font);color:var(--text);flex:1;min-width:calc(50% - 4px);text-align:center}
+.opt-btn:hover{border-color:var(--green);background:var(--green-pale)}
+.opt-btn.selected{border-color:var(--green);background:var(--green-light);color:var(--green-dark);font-weight:600}
+.opt-btn .en{display:block;font-size:10px;color:var(--text3);font-weight:400;margin-top:2px}
+.opt-btn.selected .en{color:var(--green);opacity:.7}
+.opt-btn.multi{min-width:calc(33.33% - 6px)}
+.opt-btn.multi.selected{background:var(--green-light)}
+.opt-btn.disabled{opacity:.4;pointer-events:none}
+/* Input */
+.input-group{margin-bottom:10px}
+.input-label{font-size:13px;font-weight:500;margin-bottom:4px;display:flex;align-items:baseline;gap:6px}
+.input-label .en{font-size:10px;color:var(--text3);font-weight:400}
+.input-field{width:100%;padding:12px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;outline:none;transition:.15s;font-family:var(--font);background:#fff}
+.input-field:focus{border-color:var(--green);box-shadow:0 0 0 3px rgba(7,193,96,.12)}
+.input-field::placeholder{color:var(--text3)}
+/* Radio */
+.radio-group{display:flex;gap:8px;margin-bottom:10px}
+.radio-btn{flex:1;padding:12px;border:1.5px solid var(--border);border-radius:8px;text-align:center;cursor:pointer;transition:.15s;font-size:14px;font-family:var(--font);background:#fff}
+.radio-btn:hover{border-color:var(--green)}
+.radio-btn.active{border-color:var(--green);background:var(--green-light);color:var(--green-dark);font-weight:600}
+.radio-btn .en{display:block;font-size:10px;color:var(--text3);font-weight:400;margin-top:2px}
+.radio-btn.active .en{color:var(--green);opacity:.7}
+/* Textarea */
+.textarea-field{width:100%;padding:12px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;outline:none;resize:vertical;min-height:80px;transition:.15s;font-family:var(--font);background:#fff}
+.textarea-field:focus{border-color:var(--green);box-shadow:0 0 0 3px rgba(7,193,96,.12)}
+/* Step Navigation */
+.step-nav{display:flex;gap:10px;margin-top:16px}
+.step-nav .btn{flex:1}
+/* Step Progress */
+.step-dots{display:flex;justify-content:center;gap:8px;margin-bottom:16px}
+.step-dot{width:8px;height:8px;border-radius:50%;background:var(--border);transition:.3s}
+.step-dot.active{background:var(--green);width:24px;border-radius:4px}
+.step-dot.done{background:var(--green)}
+/* Plan Card */
+.plan-card{border:2px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:10px;cursor:pointer;transition:.15s}
+.plan-card:hover{border-color:var(--green)}
+.plan-card.recommended{border-color:var(--green);background:var(--green-pale)}
+.plan-card .plan-name{font-size:16px;font-weight:600}
+.plan-card .plan-price{font-size:22px;font-weight:700;color:var(--green);margin:4px 0}
+.plan-card .plan-price span{font-size:13px;font-weight:400;color:var(--text2)}
+.plan-card .plan-desc{font-size:12px;color:var(--text2);line-height:1.5}
+.plan-card .plan-tag{display:inline-block;font-size:10px;padding:2px 8px;border-radius:4px;background:var(--green);color:#fff;margin-top:6px}
+.plan-card.selected{border-color:var(--green);background:var(--green-light)}
+/* Payment Sheet */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;display:none;align-items:flex-end;justify-content:center}
+.modal-overlay.show{display:flex}
+.modal-sheet{background:#f2f2f2;width:100%;max-width:414px;border-radius:16px 16px 0 0;padding:20px;animation:slideUp .3s;max-height:90vh;overflow-y:auto}
+@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+.modal-handle{width:36px;height:4px;background:#ddd;border-radius:2px;margin:0 auto 16px}
+.pay-merchant{text-align:center;margin-bottom:16px}
+.pay-merchant .name{font-size:15px;font-weight:600}
+.pay-merchant .sub{font-size:11px;color:var(--text2);margin-top:2px}
+.pay-amount{text-align:center;font-size:36px;font-weight:700;color:var(--text);margin-bottom:20px}
+.pay-amount span{font-size:16px;font-weight:400}
+.pay-detail{background:#fff;border-radius:8px;padding:12px 16px;margin-bottom:16px}
+.pay-detail-row{display:flex;justify-content:space-between;padding:8px 0;font-size:14px;border-bottom:1px solid #f0f0f0}
+.pay-detail-row:last-child{border-bottom:none}
+.pay-detail-row .label{color:var(--text2)}
+.pay-detail-row .value{font-weight:500}
+.pay-detail-row.total{font-weight:700;font-size:16px;border-top:2px dashed #ddd;margin-top:4px;padding-top:12px}
+.pay-detail-row.total .value{color:var(--green)}
+.pay-btn{background:var(--green);color:#fff;width:100%;padding:16px;border:none;border-radius:10px;font-size:18px;font-weight:600;cursor:pointer;font-family:var(--font);transition:.15s}
+.pay-btn:hover{background:var(--green-dark)}
+.pay-btn:disabled{opacity:.5}
+.pay-footer{text-align:center;font-size:11px;color:var(--text3);margin-top:12px}
+/* Success Animation */
+.success-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:300;display:none;align-items:center;justify-content:center;flex-direction:column;color:#fff}
+.success-overlay.show{display:flex}
+.success-icon{width:64px;height:64px;border-radius:50%;background:var(--green);display:flex;align-items:center;justify-content:center;font-size:32px;margin-bottom:16px;animation:bounceIn .5s}
+@keyframes bounceIn{0%{transform:scale(0)}50%{transform:scale(1.2)}100%{transform:scale(1)}}
+.success-text{font-size:20px;font-weight:600;margin-bottom:4px}
+.success-sub{font-size:14px;opacity:.8;margin-bottom:24px}
+/* Post-purchase Progress */
+.progress-steps{padding:8px 0}
+.progress-step{display:flex;align-items:center;gap:12px;padding:12px 0;opacity:.4;transition:.5s}
+.progress-step.active{opacity:1}
+.progress-step.done{opacity:1}
+.progress-step .check{width:24px;height:24px;border-radius:50%;border:2px solid var(--text3);display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;transition:.3s}
+.progress-step.done .check{border-color:var(--green);background:var(--green);color:#fff}
+.progress-step.active .check{border-color:var(--green);color:var(--green)}
+.progress-step .step-text{font-size:14px}
+.progress-step .step-text .en{font-size:10px;color:var(--text2);display:block}
+/* Chat */
+.chat-container{display:flex;flex-direction:column;gap:10px;padding:4px 0}
+.chat-msg{display:flex;gap:8px;max-width:88%;animation:msgIn .3s}
+.chat-msg.ai{align-self:flex-start}
+.chat-msg.user{align-self:flex-end;flex-direction:row-reverse}
+@keyframes msgIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.chat-avatar{width:32px;height:32px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600}
+.chat-msg.ai .chat-avatar{background:var(--green);color:#fff}
+.chat-msg.user .chat-avatar{background:#ddd;color:var(--text2)}
+.chat-bubble{padding:10px 14px;border-radius:12px;font-size:14px;line-height:1.6;position:relative}
+.chat-msg.ai .chat-bubble{background:#fff;border-top-left-radius:2px;box-shadow:var(--shadow)}
+.chat-msg.user .chat-bubble{background:var(--green);color:#fff;border-top-right-radius:2px}
+.chat-bubble .en{font-size:11px;opacity:.7;display:block;margin-top:4px}
+.chat-msg.user .chat-bubble .en{opacity:.6}
+.chat-time{font-size:10px;color:var(--text3);text-align:center;margin:6px 0}
+.chat-input{display:flex;gap:8px;padding:10px 12px;background:#fff;border-top:1px solid var(--border);flex-shrink:0}
+.chat-input input{flex:1;padding:10px 14px;border:1.5px solid var(--border);border-radius:20px;font-size:14px;outline:none;font-family:var(--font);transition:.15s}
+.chat-input input:focus{border-color:var(--green)}
+.chat-input .send-btn{width:38px;height:38px;border-radius:50%;background:var(--green);color:#fff;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:.15s}
+.chat-input .send-btn:hover{background:var(--green-dark)}
+.chat-input .send-btn:disabled{opacity:.4}
+.chat-typing{display:flex;gap:4px;padding:8px 0}
+.chat-typing span{width:6px;height:6px;border-radius:50%;background:var(--text3);animation:typing 1.2s infinite}
+.chat-typing span:nth-child(2){animation-delay:.2s}
+.chat-typing span:nth-child(3){animation-delay:.4s}
+@keyframes typing{0%,60%,100%{opacity:.3}30%{opacity:1}}
+/* Settings */
+.settings-header{text-align:center;padding:20px 0 10px}
+.settings-avatar{width:56px;height:56px;border-radius:50%;background:var(--green);color:#fff;display:flex;align-items:center;justify-content:center;font-size:24px;margin:0 auto 8px}
+.settings-name{font-size:18px;font-weight:600}
+.settings-plan{font-size:12px;color:var(--text2)}
+.settings-section{margin-bottom:16px}
+.settings-section-title{font-size:13px;font-weight:600;color:var(--text2);margin-bottom:8px;padding-left:2px}
+.settings-row{display:flex;justify-content:space-between;padding:12px 14px;background:#fff;border-radius:8px;margin-bottom:2px;font-size:14px;box-shadow:var(--shadow)}
+.settings-row .label{color:var(--text2);display:flex;align-items:center;gap:6px}
+.settings-row .label .en{font-size:10px;color:var(--text3)}
+.settings-row .value{font-weight:500;text-align:right}
+.settings-row .value.unset{color:var(--text3);font-style:italic}
+.settings-row .value.green{color:var(--green)}
+.settings-row .value.orange{color:#F5A623}
+.settings-row .value.red{color:#FF3B30}
+.settings-divider{height:1px;background:var(--border);margin:12px 0}
+/* Welcome */
+.welcome-icon{text-align:center;padding:20px 0 8px}
+.welcome-icon span{font-size:48px}
+.welcome-title{text-align:center;font-size:20px;font-weight:700;margin-bottom:4px}
+.welcome-sub{text-align:center;font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:16px}
+/* API Tips */
+.api-tips{background:#FFF8E1;border-radius:8px;padding:12px;margin-top:8px;font-size:13px;line-height:1.6;color:#5D4E37}
+.api-tips a{color:var(--green);text-decoration:none;font-weight:500}
+.api-tips a:hover{text-decoration:underline}
+/* Plan Compare */
+.plan-compare{display:grid;grid-template-columns:1fr;gap:8px}
+.plan-compare .plan-compact{border:1.5px solid var(--border);border-radius:10px;padding:14px;cursor:pointer;transition:.15s;position:relative}
+.plan-compact:hover{border-color:var(--green)}
+.plan-compact.recommended{border-color:var(--green);background:var(--green-pale)}
+.plan-compact.selected{background:var(--green-light);border-color:var(--green)}
+.plan-compact .tag{position:absolute;top:-8px;right:12px;background:var(--green);color:#fff;font-size:10px;padding:2px 8px;border-radius:4px}
+.plan-compact .name{font-size:15px;font-weight:600}
+.plan-compact .price{font-size:20px;font-weight:700;color:var(--green)}
+.plan-compact .price span{font-size:12px;font-weight:400;color:var(--text2)}
+.plan-compact .feats{font-size:12px;color:var(--text2);margin-top:6px;line-height:1.5}
+/* Completed Banner */
+.completed-banner{background:var(--green-light);border-radius:var(--radius);padding:16px;text-align:center;margin-bottom:12px;border:1.5px solid var(--green)}
+.completed-banner .icon{font-size:32px;margin-bottom:4px}
+.completed-banner .text{font-size:14px;font-weight:600;color:var(--green-dark)}
+.completed-banner .sub{font-size:12px;color:var(--text2);margin-top:4px}
+/* Scrollbar */
+.content::-webkit-scrollbar{width:3px}
+.content::-webkit-scrollbar-thumb{background:#ddd;border-radius:2px}
+/* Multi-select count */
+.multi-count{font-size:11px;color:var(--text2);text-align:right;margin-bottom:6px}
+/* Transition helpers */
+.slide-enter{animation:slideFade .3s}
+@keyframes slideFade{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <!-- Header -->
+  <div class="header">
+    <div class="header-l">
+      <div class="header-logo">灵</div>
+      <div>
+        <div class="header-title">灵犀AI</div>
+        <div class="header-sub">Lingxi · Your AI Concierge</div>
+      </div>
+    </div>
+    <div class="header-status" id="headerStatus">未配置</div>
+  </div>
+
+  <!-- Tab Content -->
+  <div class="content" id="content">
+    <!-- Tab 1: Onboarding -->
+    <div class="tab-pane active" id="tabOnboarding">
+      <div id="onboardingContent"></div>
+    </div>
+
+    <!-- Tab 2: Chat -->
+    <div class="tab-pane" id="tabChat">
+      <div class="chat-wrap">
+        <div id="chatContent">
+          <div class="chat-container" id="chatMessages"></div>
+        </div>
+      </div>
+      <div class="chat-input">
+        <input type="text" id="chatInput" placeholder="输入消息..." maxlength="200">
+        <button class="send-btn" id="sendBtn" onclick="sendChat()">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Tab 3: Settings -->
+    <div class="tab-pane" id="tabSettings">
+      <div id="settingsContent"></div>
+    </div>
+  </div>
+
+  <!-- Tab Bar -->
+  <div class="tabbar">
+    <div class="tab-item active" data-tab="onboarding" onclick="switchTab('onboarding')">
+      <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+      <span>引导<br><small>Onboard</small></span>
+    </div>
+    <div class="tab-item" data-tab="chat" onclick="switchTab('chat')">
+      <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
+      <span>对话<br><small>Chat</small></span>
+    </div>
+    <div class="tab-item" data-tab="settings" onclick="switchTab('settings')">
+      <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.488.488 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1115.6 12 3.611 3.611 0 0112 15.6z"/></svg>
+      <span>设置<br><small>Settings</small></span>
+    </div>
+  </div>
+
+  <!-- Payment Modal -->
+  <div class="modal-overlay" id="paymentModal">
+    <div class="modal-sheet">
+      <div class="modal-handle"></div>
+      <div class="pay-merchant">
+        <div class="name">灵犀AI</div>
+        <div class="sub">Lingxi AI · 微信支付</div>
+      </div>
+      <div class="pay-amount"><span>¥</span><span id="payAmount">1,999</span></div>
+      <div class="pay-detail" id="payDetail"></div>
+      <button class="pay-btn" id="payBtn" onclick="processPayment()">立即支付</button>
+      <div class="pay-footer">WeChat Pay · 由微信支付提供</div>
+    </div>
+  </div>
+
+  <!-- Success Overlay -->
+  <div class="success-overlay" id="successOverlay">
+    <div class="success-icon">✓</div>
+    <div class="success-text">支付成功！</div>
+    <div class="success-sub">Payment Successful</div>
+    <button class="btn btn-outline" style="border-color:#fff;color:#fff;margin-top:8px" onclick="closeSuccess()">继续 Continue</button>
+  </div>
+</div>
+
+<script>
+const STORAGE_KEY = 'lingxi_onboarding';
+
+const PROFESSIONS = [
+  {id:'lawyer',label:'律师',en:'Lawyer'},
+  {id:'teacher',label:'教师',en:'Teacher'},
+  {id:'realestate',label:'房地产',en:'Real Estate'},
+  {id:'consultant',label:'咨询',en:'Consultant'},
+  {id:'freelancer',label:'自由职业',en:'Freelancer'},
+  {id:'other',label:'其他',en:'Other'}
+];
+
+const TERMINAL_LEVELS = [
+  {id:'never',label:'从来没碰过',en:'Never touched'},
+  {id:'copy',label:'可以复制粘贴命令',en:'Can copy-paste commands'},
+  {id:'expert',label:'我很熟悉',en:'Very familiar'}
+];
+
+const TIME_SINKS = [
+  {id:'email',label:'邮件处理',en:'Email'},
+  {id:'research',label:'研究资料收集',en:'Research'},
+  {id:'meeting',label:'会议记录',en:'Meeting notes'},
+  {id:'client',label:'客户跟进',en:'Client follow-up'},
+  {id:'docs',label:'文档撰写',en:'Documentation'},
+  {id:'data',label:'数据录入',en:'Data entry'},
+  {id:'social',label:'社交媒体',en:'Social media'}
+];
+
+const DAILY_TOOLS = [
+  {id:'wechat',label:'微信',en:'WeChat'},
+  {id:'email',label:'邮件',en:'Email'},
+  {id:'calendar',label:'日历',en:'Calendar'},
+  {id:'notion',label:'Notion',en:'Notion'},
+  {id:'excel',label:'Excel',en:'Excel'},
+  {id:'docs',label:'文档',en:'Documents'},
+  {id:'crm',label:'CRM',en:'CRM'},
+  {id:'other',label:'其他',en:'Other'}
+];
+
+const PROFESSION_SKILLS = {
+  lawyer:['合同审查 Contract Review','法律检索 Legal Research','案件分析 Case Analysis','法律文书撰写 Legal Writing'],
+  teacher:['教案编写 Lesson Planning','作业批改 Grading','课件制作 Courseware','家校沟通 Parent Communication'],
+  realestate:['房源分析 Property Analysis','合同管理 Contract Mgmt','市场报告 Market Reports','客户跟进 Client Follow-up'],
+  consultant:['数据分析 Data Analysis','报告撰写 Report Writing','客户提案 Client Proposals','行业研究 Industry Research'],
+  freelancer:['项目管理 Project Mgmt','客户沟通 Client Comms','报价方案 Quoting','合同管理 Contract Mgmt'],
+  other:['个性化工作流 Custom Workflow','文档管理 Document Mgmt','信息整理 Info Organization','自动化流程 Automation']
+};
+
+const PLANS = {
+  starter:{id:'starter',name:'入门版',en:'Starter',price:1999,desc:'适合个人用户，包含基础技能包和Aura全程指导。Recommended for first-time AI users.',feats:['专属AI助手配置','1个专业技能包','3个月API用量','Aura全程安装指导','7天无理由退款']},
+  pro:{id:'pro',name:'专业版',en:'Professional',price:4999,desc:'适合需要自定义技能的专业人士。包含2个技能包和优先支持。',feats:['入门版全部功能','2个自定义技能包','优先Aura支持通道','季度技能包更新','3个月API用量','专业提示词库']},
+  enterprise:{id:'enterprise',name:'企业版',en:'Enterprise',price:14999,desc:'适合2-5人团队。包含管理后台和专属Aura实例。',feats:['3个专业版席位','独立API密钥池','专属Aura实例','管理控制台','30分钟人工响应','6个月API用量','自定义技能包开发']}
+};
+
+let state = loadState();
+
+function defaultState() {
+  return {
+    onboardingComplete:false,
+    currentStep:0,
+    profession:'',
+    name:'',
+    wechatId:'',
+    computer:'',
+    terminalComfort:'',
+    hasApiKey:'',
+    timeSinks:[],
+    dailyTools:[],
+    aiHelpText:'',
+    recommendedPlan:'',
+    planChosen:'',
+    paymentDone:false,
+    activated:false,
+    chatMessages:[],
+    currentTab:'onboarding',
+    postPurchaseDone:false
+  };
+}
+
+function loadState() {
+  try {
+    const d = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    if(d&&typeof d==='object'){return{...defaultState(),...d}}
+  }catch(e){}
+  return defaultState();
+}
+
+function saveState() {
+  localStorage.setItem(STORAGE_KEY,JSON.stringify(state));
+}
+
+function init() {
+  render();
+  updateHeader();
+  if(state.chatMessages.length===0){
+    addChatMsg('ai','你好！我是奥拉，你的AI助手。有什么我可以帮你的吗？','Hi! I\'m Aura, your AI concierge. How can I help you?');
+  }
+  renderChat();
+  switchTab(state.currentTab);
+  document.getElementById('chatInput').addEventListener('keydown',function(e){
+    if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat()}
+  });
+}
+
+window.addEventListener('DOMContentLoaded',init);
+
+function updateHeader() {
+  const el=document.getElementById('headerStatus');
+  if(!el)return;
+  if(state.paymentDone&&state.activated)el.textContent='已激活 Active';
+  else if(state.paymentDone)el.textContent='配置中 Configuring';
+  else if(state.onboardingComplete)el.textContent='待支付 Pending';
+  else el.textContent='未配置 Not set';
+  el.style.background=state.activated?'rgba(255,255,255,.25)':state.paymentDone?'rgba(255,255,255,.18)':'rgba(255,255,255,.13)';
+}
+
+function switchTab(tab) {
+  state.currentTab=tab;
+  saveState();
+  document.querySelectorAll('.tab-pane').forEach(el=>el.classList.remove('active'));
+  document.querySelectorAll('.tab-item').forEach(el=>el.classList.remove('active'));
+  document.getElementById('tab'+tab.charAt(0).toUpperCase()+tab.slice(1)).classList.add('active');
+  document.querySelector(`.tab-item[data-tab="${tab}"]`).classList.add('active');
+  if(tab==='onboarding')renderOnboarding();
+  if(tab==='settings')renderSettings();
+  if(tab==='chat'){renderChat();setTimeout(()=>document.getElementById('chatInput').focus(),100)}
+  const wrap=document.querySelector(tab==='chat'?'.chat-wrap':'.content');
+  if(wrap)wrap.scrollTop=0;
+}
+
+function render() {
+  renderOnboarding();
+  renderSettings();
+  renderChat();
+}
+
+/* ===== ONBOARDING ===== */
+
+function renderOnboarding() {
+  const el=document.getElementById('onboardingContent');
+  if(state.onboardingComplete&&state.paymentDone){
+    el.innerHTML=`
+      <div class="completed-banner">
+        <div class="icon">🎉</div>
+        <div class="text">引导已完成</div>
+        <div class="sub">Onboarding Complete</div>
+      </div>
+      <div class="card" style="text-align:center">
+        <p style="font-size:13px;color:var(--text2);margin-bottom:12px">你的专属AI助手正在为你服务</p>
+        <button class="btn btn-outline btn-block" onclick="resetOnboarding()">重新开始引导 Restart Onboarding</button>
+      </div>`;
+    return;
+  }
+  const steps=[renderStep0,renderStep1,renderStep2,renderStep3,renderStep4,renderStep5,renderStep6];
+  const idx=Math.min(state.currentStep,steps.length-1);
+  steps[idx](el);
+}
+
+function renderStep0(el) {
+  el.innerHTML=`
+    <div class="card">
+      <div class="welcome-icon"><span>🤖</span></div>
+      <div class="welcome-title">欢迎来到灵犀AI</div>
+      <div class="welcome-sub">Welcome to Lingxi AI</div>
+      <div class="card-sub" style="text-align:center">
+        你好！我是<span style="color:var(--green);font-weight:600">奥拉 (Aura)</span>，你的AI助手。<br>
+        让我了解你的工作情况，为你推荐最合适的方案。<br>
+        全程只需要几分钟。开始吧！
+      </div>
+      <button class="btn btn-primary btn-block btn-lg" onclick="goStep(1)">开始引导 Start</button>
+    </div>`;
+}
+
+function renderStep1(el) {
+  el.innerHTML=`
+    <div class="step-dots" id="stepDots1"></div>
+    <div class="card">
+      <div class="card-title">第一步：职业与身份 <span class="en" style="font-size:10px;color:var(--text3);font-weight:400">Step 1: Profession & Identity</span></div>
+      <div class="card-sub">你主要做什么工作？<br><span class="en" style="font-size:11px">What do you do for work?</span></div>
+      <div class="opt-grid" id="professionGrid">
+        ${PROFESSIONS.map(p=>`
+          <div class="opt-btn ${state.profession===p.id?'selected':''}" onclick="selectProfession('${p.id}')">
+            ${p.label}<span class="en">${p.en}</span>
+          </div>`).join('')}
+      </div>
+      <div class="input-group" style="margin-top:12px">
+        <div class="input-label">称呼 <span class="en">Name</span></div>
+        <input class="input-field" id="nameInput" placeholder="你的名字或昵称" value="${state.name}" oninput="state.name=this.value;saveState()">
+      </div>
+      <div class="input-group">
+        <div class="input-label">微信号 <span class="en">WeChat ID</span></div>
+        <input class="input-field" id="wechatInput" placeholder="你的微信号" value="${state.wechatId}" oninput="state.wechatId=this.value;saveState()">
+      </div>
+      <div class="step-nav">
+        <button class="btn btn-outline" onclick="goStep(0)">返回 Back</button>
+        <button class="btn btn-primary ${!state.profession?'btn-disabled':''}" onclick="goStep(2)">下一步 Next</button>
+      </div>
+    </div>`;
+  updateDots(1);
+}
+
+function selectProfession(id) {
+  state.profession=id;
+  saveState();
+  renderOnboarding();
+  const skills=PROFESSION_SKILLS[id];
+  if(skills&&state.chatMessages.length>0){
+    addChatMsg('ai','我注意到你选择了「'+PROFESSIONS.find(p=>p.id===id).label+'」。作为'+PROFESSIONS.find(p=>p.id===id).label+'，以下技能包可能对你有帮助：\n• '+skills.join('\n• ')+'\n\n这些技能包可以让你的AI助手快速上手。继续了解详情！','I see you chose '+PROFESSIONS.find(p=>p.id===id).en+'. Relevant skill packs include: '+skills.slice(0,3).join(', ')+'.');
+    renderChat();
+  }
+}
+
+function renderStep2(el) {
+  el.innerHTML=`
+    <div class="step-dots" id="stepDots2"></div>
+    <div class="card">
+      <div class="card-title">第二步：技术与平台 <span class="en" style="font-size:10px;color:var(--text3);font-weight:400">Step 2: Tech Setup</span></div>
+      <div class="card-sub">你使用什么电脑？<br><span class="en" style="font-size:11px">What computer do you use?</span></div>
+      <div class="radio-group">
+        <div class="radio-btn ${state.computer==='mac'?'active':''}" onclick="state.computer='mac';saveState();renderOnboarding()">
+          Mac<span class="en">macOS</span>
+        </div>
+        <div class="radio-btn ${state.computer==='windows'?'active':''}" onclick="state.computer='windows';saveState();renderOnboarding()">
+          Windows<span class="en">Windows</span>
+        </div>
+      </div>
+      ${state.computer==='windows'?'<div class="api-tips">⚠️ Windows版本暂不支持。你可以加入等待列表，我们会在支持后第一时间通知你。<br>Windows support coming soon.</div>':''}
+      <div class="card-sub" style="margin-top:12px">你对命令行的熟悉程度？<br><span class="en" style="font-size:11px">How comfortable with terminal?</span></div>
+      <div class="opt-grid">
+        ${TERMINAL_LEVELS.map(t=>`
+          <div class="opt-btn ${state.terminalComfort===t.id?'selected':''}" onclick="state.terminalComfort='${t.id}';saveState();renderOnboarding()">
+            ${t.label}<span class="en">${t.en}</span>
+          </div>`).join('')}
+      </div>
+      <div class="card-sub" style="margin-top:12px">你有DeepSeek API密钥吗？<br><span class="en" style="font-size:11px">Do you have a DeepSeek API key?</span></div>
+      <div class="opt-grid" style="grid-template-columns:1fr 1fr;display:grid">
+        <div class="opt-btn ${state.hasApiKey==='yes'?'selected':''}" onclick="state.hasApiKey='yes';saveState();renderOnboarding()">
+          已有<span class="en">I have one</span>
+        </div>
+        <div class="opt-btn ${state.hasApiKey==='no'?'selected':''}" onclick="state.hasApiKey='no';saveState();renderOnboarding()">
+          没有,需要帮助<span class="en">Need help</span>
+        </div>
+      </div>
+      ${state.hasApiKey==='no'?`
+        <div class="api-tips">
+          🔑 获取DeepSeek API密钥很简单：<br>
+          1. 访问 <a href="https://platform.deepseek.com" target="_blank">platform.deepseek.com</a><br>
+          2. 注册账号并登录<br>
+          3. 在API Keys页面创建新密钥<br>
+          4. 复制密钥并保存好<br><br>
+          <span style="font-size:11px">需要帮助？可以在对话中联系我，我一步步指导你。</span>
+        </div>`:''}
+      <div class="step-nav">
+        <button class="btn btn-outline" onclick="goStep(1)">返回 Back</button>
+        <button class="btn btn-primary ${!state.computer||!state.terminalComfort||!state.hasApiKey?'btn-disabled':''}" onclick="goStep(3)">下一步 Next</button>
+      </div>
+    </div>`;
+  updateDots(2);
+}
+
+function renderStep3(el) {
+  const maxTimeSinks=3;
+  el.innerHTML=`
+    <div class="step-dots" id="stepDots3"></div>
+    <div class="card">
+      <div class="card-title">第三步：工作流程与痛点 <span class="en" style="font-size:10px;color:var(--text3);font-weight:400">Step 3: Workflow & Pain Points</span></div>
+      <div class="card-sub">你最大的时间消耗是什么？（最多选3项）<br><span class="en" style="font-size:11px">What takes most of your time? (max 3)</span></div>
+      <div class="multi-count">已选 ${state.timeSinks.length}/${maxTimeSinks}</div>
+      <div class="opt-grid">
+        ${TIME_SINKS.map(t=>`
+          <div class="opt-btn multi ${state.timeSinks.includes(t.id)?'selected':''} ${state.timeSinks.length>=maxTimeSinks&&!state.timeSinks.includes(t.id)?'disabled':''}" onclick="toggleTimeSink('${t.id}')">
+            ${t.label}<span class="en">${t.en}</span>
+          </div>`).join('')}
+      </div>
+      <div class="card-sub" style="margin-top:12px">你每天用哪些工具？<br><span class="en" style="font-size:11px">What tools do you use daily?</span></div>
+      <div class="opt-grid">
+        ${DAILY_TOOLS.map(t=>`
+          <div class="opt-btn multi ${state.dailyTools.includes(t.id)?'selected':''}" onclick="toggleDailyTool('${t.id}')">
+            ${t.label}<span class="en">${t.en}</span>
+          </div>`).join('')}
+      </div>
+      <div class="card-sub" style="margin-top:12px">你希望AI帮你解决什么具体问题？<br><span class="en" style="font-size:11px">What specific problems should AI solve?</span></div>
+      <textarea class="textarea-field" id="aiHelpText" placeholder="请用2-3句话描述，例如：我希望AI能帮我自动整理客户邮件、生成会议纪要、以及辅助我撰写合同模板……" oninput="state.aiHelpText=this.value;saveState()">${state.aiHelpText}</textarea>
+      <div class="step-nav">
+        <button class="btn btn-outline" onclick="goStep(2)">返回 Back</button>
+        <button class="btn btn-primary" onclick="goStep(4)">查看推荐方案 Next</button>
+      </div>
+    </div>`;
+  updateDots(3);
+}
+
+function toggleTimeSink(id) {
+  if(state.timeSinks.includes(id)){
+    state.timeSinks=state.timeSinks.filter(x=>x!==id);
+  }else if(state.timeSinks.length<3){
+    state.timeSinks.push(id);
+  }
+  saveState();
+  renderOnboarding();
+}
+
+function toggleDailyTool(id) {
+  if(state.dailyTools.includes(id)){
+    state.dailyTools=state.dailyTools.filter(x=>x!==id);
+  }else{
+    state.dailyTools.push(id);
+  }
+  saveState();
+  renderOnboarding();
+}
+
+function renderStep4(el) {
+  const rec=recommendPlan();
+  state.recommendedPlan=rec.id;
+  saveState();
+  const plans=[PLANS.starter,PLANS.pro,PLANS.enterprise];
+  el.innerHTML=`
+    <div class="step-dots" id="stepDots4"></div>
+    <div class="card">
+      <div class="card-title">第四步：方案推荐 <span class="en" style="font-size:10px;color:var(--text3);font-weight:400">Step 4: Plan Selection</span></div>
+      <div class="card-sub">根据你的情况，我推荐：<br><span class="en" style="font-size:11px">Based on your needs, I recommend:</span></div>
+      <div class="plan-compare">
+        ${plans.map(p=>{
+          const isRec=p.id===rec.id;
+          const isSelected=state.planChosen===p.id;
+          return `<div class="plan-compact ${isRec?'recommended':''} ${isSelected?'selected':''}" onclick="selectPlan('${p.id}')">
+            ${isRec?'<div class="tag">推荐 Best Match</div>':''}
+            <div class="name">${p.name} <span style="font-size:11px;color:var(--text2);font-weight:400">${p.en}</span></div>
+            <div class="price">¥${p.price.toLocaleString()} <span>一次性</span></div>
+            <div class="feats">${p.feats.map(f=>'✓ '+f).join('<br>')}</div>
+          </div>`;
+        }).join('')}
+      </div>
+      <div style="text-align:center;margin:10px 0 6px;font-size:12px;color:var(--text2)">
+        ${rec.id==='starter'?'推荐理由：你首次接触AI工具，入门版最适合你。包含基础技能包和Aura全程指导。':''}
+        ${rec.id==='pro'?'推荐理由：你对技术有一定了解，专业版的自定义技能包能最大化你的效率。':''}
+        ${rec.id==='enterprise'?'推荐理由：你使用多种工具且有团队协作需求，企业版提供完整的解决方案。':''}
+      </div>
+      <div class="step-nav">
+        <button class="btn btn-outline" onclick="goStep(3)">返回 Back</button>
+        ${state.planChosen?`<button class="btn btn-primary" onclick="goStep(5)">立即购买 Purchase</button>`:`<button class="btn btn-primary btn-disabled">请先选择方案</button>`}
+      </div>
+      ${state.planChosen&&state.planChosen!==rec.id?`<div style="text-align:center;margin-top:8px"><button class="btn btn-sm" style="color:var(--text2);background:none;border:none;cursor:pointer;font-size:12px;text-decoration:underline" onclick="state.planChosen=rec.id;saveState();renderOnboarding()">恢复推荐 Restore recommendation</button></div>`:''}
+    </div>`;
+  updateDots(4);
+}
+
+function selectPlan(id) {
+  state.planChosen=id;
+  saveState();
+  renderOnboarding();
+}
+
+function recommendPlan() {
+  const t=state.terminalComfort;
+  const pCount=state.timeSinks.length;
+  const toolCount=state.dailyTools.length;
+  if(pCount>=3||toolCount>=5||state.profession==='consultant')return PLANS.enterprise;
+  if(t==='expert'||(t==='copy'&&pCount>=2))return PLANS.pro;
+  if(t==='never'||(t==='copy'&&pCount<=1))return PLANS.starter;
+  return PLANS.starter;
+}
+
+function renderStep5(el) {
+  const plan=getPlan(state.planChosen);
+  el.innerHTML=`
+    <div class="step-dots" id="stepDots5"></div>
+    <div class="card" style="text-align:center">
+      <div style="font-size:32px;margin-bottom:8px">📋</div>
+      <div class="card-title" style="justify-content:center">第五步：确认订单 <span class="en" style="font-size:10px;color:var(--text3);font-weight:400">Step 5: Order Confirmation</span></div>
+      <div class="card-sub" style="text-align:center">请确认你的订单信息<br><span class="en" style="font-size:11px">Please confirm your order</span></div>
+      <div class="pay-detail" style="text-align:left;margin-top:12px">
+        <div class="pay-detail-row"><span class="label">计划 Plan</span><span class="value">${plan.name} ${plan.en}</span></div>
+        <div class="pay-detail-row"><span class="label">职业 Profession</span><span class="value">${getProfLabel(state.profession)}</span></div>
+        <div class="pay-detail-row"><span class="label">称呼 Name</span><span class="value">${state.name||'未填写'}</span></div>
+        <div class="pay-detail-row"><span class="label">微信号 WeChat</span><span class="value">${state.wechatId||'未填写'}</span></div>
+        <div class="pay-detail-row total"><span class="label">合计 Total</span><span class="value">¥${plan.price.toLocaleString()}</span></div>
+      </div>
+      <div class="step-nav" style="flex-direction:column;gap:8px">
+        <button class="btn btn-primary btn-block btn-lg" onclick="openPayment()">确认并支付 Pay Now</button>
+        <button class="btn btn-outline btn-block" onclick="goStep(4)">返回修改 Back</button>
+      </div>
+    </div>`;
+  updateDots(5);
+}
+
+function renderStep6(el) {
+  el.innerHTML=`
+    <div class="step-dots" id="stepDots6"></div>
+    <div class="card" style="text-align:center">
+      <div style="font-size:48px;margin-bottom:8px">🎉</div>
+      <div class="card-title" style="justify-content:center;font-size:18px">恭喜！你的灵犀AI助手正在为你配置...</div>
+      <div class="card-sub" style="text-align:center">Congratulations! Your Lingxi AI assistant is being configured...</div>
+      <div class="progress-steps" id="progressSteps">
+        <div class="progress-step done">
+          <div class="check">✓</div>
+          <div class="step-text">收集你的需求<span class="en">Gathering your requirements</span></div>
+        </div>
+        <div class="progress-step active" id="stepConfigAI">
+          <div class="check">⟳</div>
+          <div class="step-text">配置AI引擎<span class="en">Configuring AI engine</span></div>
+        </div>
+        <div class="progress-step" id="stepLoadSkills">
+          <div class="check"></div>
+          <div class="step-text">加载${getProfLabel(state.profession)}技能包<span class="en">Loading skill packs</span></div>
+        </div>
+        <div class="progress-step" id="stepReady">
+          <div class="check"></div>
+          <div class="step-text">准备完成<span class="en">Ready to go</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="card" style="text-align:center">
+      <p style="font-size:13px;color:var(--text2);line-height:1.6">我们将通过微信联系你。<br>大约30-60分钟后你的专属助手就准备好了。</p>
+      <p style="font-size:11px;color:var(--text3);margin-top:8px">We will contact you via WeChat. Your专属 assistant will be ready in 30-60 minutes.</p>
+      <button class="btn btn-primary btn-block" style="margin-top:12px" onclick="finishOnboarding()">完成 Complete → 对话</button>
+    </div>`;
+  updateDots(6);
+  animateProgress();
+}
+
+function animateProgress() {
+  setTimeout(()=>{
+    const s2=document.getElementById('stepConfigAI');
+    const s3=document.getElementById('stepLoadSkills');
+    const s4=document.getElementById('stepReady');
+    if(s2){s2.classList.remove('active');s2.classList.add('done');s2.querySelector('.check').textContent='✓'}
+    if(s3){s3.classList.add('active')}
+    setTimeout(()=>{
+      if(s3){s3.classList.remove('active');s3.classList.add('done');s3.querySelector('.check').textContent='✓'}
+      if(s4){s4.classList.add('active')}
+      setTimeout(()=>{
+        if(s4){s4.classList.remove('active');s4.classList.add('done');s4.querySelector('.check').textContent='✓'}
+        state.activated=true;
+        saveState();
+        updateHeader();
+      },1200);
+    },1000);
+  },600);
+}
+
+function updateDots(step) {
+  const dots=document.querySelectorAll('[id^=stepDots] .step-dot');
+  if(dots.length)dots.forEach((d,i)=>{d.className='step-dot'+(i<step?' done':i===step?' active':'')});
+}
+
+function getProfLabel(id) {
+  const p=PROFESSIONS.find(x=>x.id===id);
+  return p?p.label+' '+p.en:id||'未选择';
+}
+
+function getPlan(id) {
+  return PLANS[id||'starter']||PLANS.starter;
+}
+
+function goStep(step) {
+  state.currentStep=step;
+  saveState();
+  renderOnboarding();
+  document.getElementById('content').scrollTop=0;
+}
+
+/* ===== PAYMENT ===== */
+
+function openPayment() {
+  const plan=getPlan(state.planChosen);
+  document.getElementById('payAmount').textContent=plan.price.toLocaleString();
+  document.getElementById('payDetail').innerHTML=`
+    <div class="pay-detail-row"><span class="label">商品 Item</span><span class="value">${plan.name} ${plan.en}</span></div>
+    <div class="pay-detail-row"><span class="label">价格 Price</span><span class="value">¥${plan.price.toLocaleString()}</span></div>
+    <div class="pay-detail-row"><span class="label">${getProfLabel(state.profession)}技能包</span><span class="value">含 Included</span></div>
+    <div class="pay-detail-row"><span class="label">Aura全程指导</span><span class="value">含 Included</span></div>
+    <div class="pay-detail-row"><span class="label">支付方式</span><span class="value">微信支付 WeChat Pay</span></div>
+    <div class="pay-detail-row total"><span class="label">合计</span><span class="value">¥${plan.price.toLocaleString()}</span></div>
+  `;
+  document.getElementById('paymentModal').classList.add('show');
+}
+
+function processPayment() {
+  document.getElementById('payBtn').disabled=true;
+  document.getElementById('payBtn').textContent='处理中...';
+  setTimeout(()=>{
+    document.getElementById('paymentModal').classList.remove('show');
+    document.getElementById('successOverlay').classList.add('show');
+    state.paymentDone=true;
+    saveState();
+    updateHeader();
+    addChatMsg('ai','🎉 支付成功！感谢你的信任！你的专属AI助手正在准备中，大约30-60分钟后就会准备好。我会通过微信联系你。','Payment successful! Your dedicated AI assistant is being prepared and will be ready in 30-60 minutes.');
+    renderChat();
+  },1500);
+}
+
+function closeSuccess() {
+  document.getElementById('successOverlay').classList.remove('show');
+  document.getElementById('payBtn').disabled=false;
+  document.getElementById('payBtn').textContent='立即支付';
+  state.currentStep=6;
+  saveState();
+  renderOnboarding();
+  switchTab('onboarding');
+}
+
+/* ===== FINISH ===== */
+
+function finishOnboarding() {
+  state.onboardingComplete=true;
+  state.postPurchaseDone=true;
+  saveState();
+  updateHeader();
+  switchTab('chat');
+}
+
+function resetOnboarding() {
+  if(confirm('确定要重新开始引导吗？所有数据将被清除。\nRestart onboarding? All data will be cleared.')){
+    Object.assign(state,defaultState());
+    state.chatMessages=[];
+    saveState();
+    addChatMsg('ai','你好！我是奥拉，你的AI助手。让我们重新开始吧！','Hi! I\'m Aura. Let\'s start fresh!');
+    render();
+    updateHeader();
+    switchTab('onboarding');
+  }
+}
+
+/* ===== CHAT ===== */
+
+function addChatMsg(role,text,en) {
+  state.chatMessages.push({role,text,en,time:new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})});
+  saveState();
+}
+
+function renderChat() {
+  const el=document.getElementById('chatMessages');
+  if(!el)return;
+  if(state.chatMessages.length===0){
+    el.innerHTML='<div style="text-align:center;padding:40px 20px;color:var(--text3);font-size:13px">开始对话吧<br><span style="font-size:11px">Start a conversation</span></div>';
+    return;
+  }
+  el.innerHTML=state.chatMessages.map(m=>`
+    <div class="chat-msg ${m.role}">
+      <div class="chat-avatar">${m.role==='ai'?'奥':'你'}</div>
+      <div class="chat-bubble">${m.text.replace(/\n/g,'<br>')}${m.en?`<span class="en">${m.en}</span>`:''}</div>
+    </div>`).join('');
+  const wrap=document.querySelector('.chat-wrap');
+  if(wrap)wrap.scrollTop=wrap.scrollHeight;
+}
+
+function sendChat() {
+  const input=document.getElementById('chatInput');
+  const text=input.value.trim();
+  if(!text)return;
+  addChatMsg('user',text);
+  input.value='';
+  renderChat();
+  setTimeout(()=>generateAuraResponse(text),400);
+}
+
+function generateAuraResponse(userText) {
+  const p=getProfLabel(state.profession);
+  const plan=state.planChosen?getPlan(state.planChosen).name+' '+getPlan(state.planChosen).en:'';
+  const name=state.name||'朋友';
+  const hasContext=state.profession||state.name||state.planChosen;
+  
+  const knowledge = [];
+  if(state.name)knowledge.push('姓名: '+state.name);
+  if(state.profession)knowledge.push('职业: '+p);
+  if(state.planChosen)knowledge.push('方案: '+plan);
+  if(state.paymentDone)knowledge.push('已支付');
+  if(state.activated)knowledge.push('已激活');
+  
+  let response='',responseEn='';
+  const t=userText.toLowerCase();
+  
+  if(t.includes('你好')||t.includes('hi')||t.includes('hello')){
+    if(hasContext){
+      response=name+'你好！我是奥拉。';
+      responseEn='Hello '+name+'! I\'m Aura.';
+      if(state.profession){
+        response+='作为'+p.split(' ')[0]+'，有什么我可以帮你的吗？';
+        responseEn+=' As a '+p.split(' ').slice(1).join(' ')+', how can I help?';
+      }
+    }else{
+      response='你好！我是奥拉，你的AI助手。请前往"引导"标签完成设置，我就能为你提供个性化帮助。';
+      responseEn='Hi! I\'m Aura. Please complete onboarding in the Onboard tab so I can help you better.';
+    }
+  }
+  else if(t.includes('skill')||t.includes('技能')||t.includes('pack')||t.includes('包')){
+    if(state.profession){
+      const skills=PROFESSION_SKILLS[state.profession];
+      response='作为'+p.split(' ')[0]+'，你的技能包包含：<br>• '+skills.join('<br>• ');
+      responseEn='Your skill pack includes: '+skills.join(', ');
+    }else{
+      response='请先在引导中选择你的职业，我才能为你推荐合适的技能包。';
+      responseEn='Please select your profession in onboarding first.';
+    }
+  }
+  else if(t.includes('价格')||t.includes('price')||t.includes('钱')||t.includes('费用')||t.includes('多少钱')){
+    const rec=recommendPlan();
+    response='我们的方案：<br>• 入门版 ¥1,999 — 适合个人首次使用<br>• 专业版 ¥4,999 — 适合专业人士<br>• 企业版 ¥14,999 — 适合2-5人团队<br><br>根据你的情况，我推荐'+rec.name+'(¥'+rec.price.toLocaleString()+')。';
+    responseEn='Our plans: Starter ¥1,999, Pro ¥4,999, Enterprise ¥14,999. Based on your needs, I recommend '+rec.en+'.';
+  }
+  else if(t.includes('api')||t.includes('key')||t.includes('密钥')){
+    response='你需要一个DeepSeek API密钥来使用AI助手。可以访问 platform.deepseek.com 注册并创建密钥。需要我一步步指导你吗？';
+    responseEn='You need a DeepSeek API key. Visit platform.deepseek.com to create one. Need step-by-step help?';
+  }
+  else if(t.includes('你是谁')||t.includes('who are you')){
+    response='我是奥拉 (Aura)，你的AI助手。我负责了解你的需求、推荐最适合的方案，并全程指导你完成设置。你可以把我看作是你的AI concierge。';
+    responseEn='I\'m Aura, your AI concierge. I help understand your needs, recommend the best plan, and guide you through setup.';
+  }
+  else if(t.includes('谢谢')||t.includes('thank')){
+    response='不客气！随时找我。😊';
+    responseEn='You\'re welcome! I\'m here anytime. 😊';
+  }
+  else if(t.includes('setup')||t.includes('安装')||t.includes('设置')||t.includes('配置')){
+    if(state.paymentDone){
+      response='你的AI助手正在配置中！请耐心等待30-60分钟。完成后我会通知你安装步骤。';
+      responseEn='Your AI assistant is being configured! Please wait 30-60 minutes. I\'ll notify you when it\'s ready.';
+    }else{
+      response='请先完成引导流程选择方案并完成支付，然后我会指导你完成安装设置。';
+      responseEn='Please complete the onboarding flow first, then I\'ll guide you through setup.';
+    }
+  }
+  else if(t.includes('plan')||t.includes('方案')||t.includes('推荐')){
+    const rec=recommendPlan();
+    response='根据你的信息，我推荐'+rec.name+'，¥'+rec.price.toLocaleString()+'。包含：'+rec.feats.slice(0,3).join('、')+'。需要我详细介绍吗？';
+    responseEn='Based on your info, I recommend '+rec.en+' at ¥'+rec.price.toLocaleString()+'. It includes '+rec.feats.slice(0,3).join(', ')+'. Want more details?';
+  }
+  else if(state.activated){
+    response='收到！你的AI助手已经激活，可以根据你的需求开始工作。有什么具体任务需要我帮你处理吗？';
+    responseEn='Got it! Your AI assistant is active. Any specific tasks you need help with?';
+  }
+  else if(hasContext){
+    response=name+'，我明白你的意思。让我看看如何帮助你。你可以在引导标签中继续完成设置，或者直接告诉我你想了解什么。';
+    responseEn='I understand, '+name+'. You can continue with onboarding or ask me anything.';
+  }
+  else{
+    response='感谢你的消息！建议你先完成引导设置（点击下方"引导"标签），这样我可以根据你的职业和需求提供更精准的帮助。';
+    responseEn='Thanks! Please complete onboarding (tap the Onboard tab) so I can provide tailored help based on your profession and needs.';
+  }
+  
+  addChatMsg('ai',response,responseEn);
+  renderChat();
+}
+
+/* ===== SETTINGS ===== */
+
+function renderSettings() {
+  const el=document.getElementById('settingsContent');
+  if(!el)return;
+  const p=getProfLabel(state.profession);
+  const plan=state.planChosen?getPlan(state.planChosen):null;
+  
+  el.innerHTML=`
+    <div class="settings-header">
+      <div class="settings-avatar">${state.name?state.name.charAt(0):'?'}</div>
+      <div class="settings-name">${state.name||'未设置 Not set'}</div>
+      <div class="settings-plan">${p}${plan?' · '+plan.name+' '+plan.en:''}</div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-title">个人信息 <span class="en" style="font-size:10px;color:var(--text3);font-weight:400">Personal Info</span></div>
+      <div class="settings-row"><span class="label">称呼 Name <span class="en">Name</span></span><span class="value ${!state.name?'unset':''}">${state.name||'未设置'}</span></div>
+      <div class="settings-row"><span class="label">微信号 <span class="en">WeChat ID</span></span><span class="value ${!state.wechatId?'unset':''}">${state.wechatId||'未设置'}</span></div>
+      <div class="settings-row"><span class="label">职业 <span class="en">Profession</span></span><span class="value ${!state.profession?'unset':''}">${state.profession?p:'未选择'}</span></div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-title">技术信息 <span class="en" style="font-size:10px;color:var(--text3);font-weight:400">Tech Info</span></div>
+      <div class="settings-row"><span class="label">电脑 <span class="en">Computer</span></span><span class="value ${!state.computer?'unset':''}">${state.computer==='mac'?'Mac':state.computer==='windows'?'Windows':'未设置'}</span></div>
+      <div class="settings-row"><span class="label">终端熟练度 <span class="en">Terminal</span></span><span class="value ${!state.terminalComfort?'unset':''}">${TERMINAL_LEVELS.find(t=>t.id===state.terminalComfort)?.label||'未设置'}</span></div>
+      <div class="settings-row"><span class="label">API密钥 <span class="en">API Key</span></span><span class="value ${!state.hasApiKey?'unset':''}">${state.hasApiKey==='yes'?'已有 ✓':state.hasApiKey==='no'?'需要帮助':'未设置'}</span></div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-title">工作流 <span class="en" style="font-size:10px;color:var(--text3);font-weight:400">Workflow</span></div>
+      <div class="settings-row"><span class="label">时间消耗 <span class="en">Time Sinks</span></span><span class="value ${state.timeSinks.length===0?'unset':''}">${state.timeSinks.length>0?state.timeSinks.map(s=>TIME_SINKS.find(t=>t.id===s)?.label).filter(Boolean).join('、')||'未选择':'未选择'}</span></div>
+      <div class="settings-row"><span class="label">日常工具 <span class="en">Daily Tools</span></span><span class="value ${state.dailyTools.length===0?'unset':''}">${state.dailyTools.length>0?state.dailyTools.map(s=>DAILY_TOOLS.find(t=>t.id===s)?.label).filter(Boolean).join('、')||'未选择':'未选择'}</span></div>
+      <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:4px">
+        <span class="label">AI需求 <span class="en">AI Needs</span></span>
+        <span class="value" style="text-align:left;font-size:13px;font-weight:400;width:100%;word-break:break-word">${state.aiHelpText||'<span class="unset">未填写</span>'}</span>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-title">方案与状态 <span class="en" style="font-size:10px;color:var(--text3);font-weight:400">Plan & Status</span></div>
+      <div class="settings-row"><span class="label">推荐方案 <span class="en">Recommended</span></span><span class="value">${state.recommendedPlan?getPlan(state.recommendedPlan).name+' '+getPlan(state.recommendedPlan).en:'未计算'}</span></div>
+      <div class="settings-row"><span class="label">已选方案 <span class="en">Selected Plan</span></span><span class="value ${!state.planChosen?'unset':''}">${plan?plan.name+' '+plan.en+' ¥'+plan.price.toLocaleString():'未选择'}</span></div>
+      <div class="settings-row"><span class="label">支付状态 <span class="en">Payment</span></span><span class="value ${state.paymentDone?'green':state.onboardingComplete?'orange':'unset'}">${state.paymentDone?'已完成 ✓':state.onboardingComplete?'待支付':'未开始'}</span></div>
+      <div class="settings-row"><span class="label">激活状态 <span class="en">Status</span></span><span class="value ${state.activated?'green':'unset'}">${state.activated?'已激活 Active':'配置中 Configuring'}</span></div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-title">隐私与数据 <span class="en" style="font-size:10px;color:var(--text3);font-weight:400">Privacy & Data</span></div>
+      <div class="settings-row" style="font-size:12px;color:var(--text2);line-height:1.5">
+        所有数据存储在本地浏览器中 (localStorage)。我们不会将你的数据上传到服务器。你可以随时清除数据或重新开始引导。
+      </div>
+    </div>
+    <button class="btn btn-outline btn-block" style="margin-top:8px;border-color:#FF3B30;color:#FF3B30" onclick="resetOnboarding()">
+      重新开始引导 Restart Onboarding
+    </button>
+    <div style="height:20px"></div>`;
+}
+</script>
+</body>
+</html>
