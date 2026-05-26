@@ -328,6 +328,14 @@ const DAILY_TOOLS = [
   {id:'other',label:'其他',en:'Other'}
 ];
 
+const AI_PROVIDERS = [
+  {id:'deepseek',label:'DeepSeek',en:'DeepSeek',desc:'性价比最高，国内直接访问，无需VPN',enDesc:'Best value, accessible in China'},
+  {id:'openai',label:'OpenAI',en:'OpenAI',desc:'全球最流行的AI模型，需要科学上网',enDesc:'Most popular, requires VPN'},
+  {id:'anthropic',label:'Anthropic Claude',en:'Claude',desc:'适合长文本处理，需要科学上网',enDesc:'Best for long documents, requires VPN'},
+  {id:'google',label:'Google Gemini',en:'Gemini',desc:'适合多模态任务',enDesc:'Best for multimodal tasks'},
+  {id:'local',label:'本地模型',en:'Local Model',desc:'完全离线，需要高性能电脑',enDesc:'Fully offline, requires powerful computer'}
+];
+
 const PROFESSION_SKILLS = {
   lawyer:['合同审查 Contract Review','法律检索 Legal Research','案件分析 Case Analysis','法律文书撰写 Legal Writing'],
   teacher:['教案编写 Lesson Planning','作业批改 Grading','课件制作 Courseware','家校沟通 Parent Communication'],
@@ -354,7 +362,8 @@ function defaultState() {
     wechatId:'',
     computer:'',
     terminalComfort:'',
-    hasApiKey:'',
+    apiProvider:'',
+    apiProviderShowGuide:false,
     timeSinks:[],
     dailyTools:[],
     aiHelpText:'',
@@ -443,7 +452,7 @@ function renderOnboarding() {
       </div>`;
     return;
   }
-  const steps=[renderStep0,renderStep1,renderStep2,renderStep3,renderStep4,renderStep5,renderStep6];
+  const steps=[renderStep0,renderStep1,renderStep2,renderStep2_5,renderStep3,renderStep4,renderStep5,renderStep6];
   const idx=Math.min(state.currentStep,steps.length-1);
   steps[idx](el);
 }
@@ -524,38 +533,86 @@ function renderStep2(el) {
             ${t.label}<span class="en">${t.en}</span>
           </div>`).join('')}
       </div>
-      <div class="card-sub" style="margin-top:12px">你有DeepSeek API密钥吗？<br><span class="en" style="font-size:11px">Do you have a DeepSeek API key?</span></div>
-      <div class="opt-grid" style="grid-template-columns:1fr 1fr;display:grid">
-        <div class="opt-btn ${state.hasApiKey==='yes'?'selected':''}" onclick="state.hasApiKey='yes';saveState();renderOnboarding()">
-          已有<span class="en">I have one</span>
-        </div>
-        <div class="opt-btn ${state.hasApiKey==='no'?'selected':''}" onclick="state.hasApiKey='no';saveState();renderOnboarding()">
-          没有,需要帮助<span class="en">Need help</span>
-        </div>
-      </div>
-      ${state.hasApiKey==='no'?`
-        <div class="api-tips">
-          🔑 获取DeepSeek API密钥很简单：<br>
-          1. 访问 <a href="https://platform.deepseek.com" target="_blank">platform.deepseek.com</a><br>
-          2. 注册账号并登录<br>
-          3. 在API Keys页面创建新密钥<br>
-          4. 复制密钥并保存好<br><br>
-          <span style="font-size:11px">需要帮助？可以在对话中联系我，我一步步指导你。</span>
-        </div>`:''}
       <div class="step-nav">
         <button class="btn btn-outline" onclick="goStep(1)">返回 Back</button>
-        <button class="btn btn-primary ${!state.computer||!state.terminalComfort||!state.hasApiKey?'btn-disabled':''}" onclick="goStep(3)">下一步 Next</button>
+        <button class="btn btn-primary ${!state.computer||!state.terminalComfort?'btn-disabled':''}" onclick="goStep(3)">下一步 Next</button>
       </div>
     </div>`;
   updateDots(2);
 }
 
-function renderStep3(el) {
-  const maxTimeSinks=3;
+function renderStep2_5(el) {
   el.innerHTML=`
     <div class="step-dots" id="stepDots3"></div>
     <div class="card">
-      <div class="card-title">第三步：工作流程与痛点 <span class="en" style="font-size:10px;color:var(--text3);font-weight:400">Step 3: Workflow & Pain Points</span></div>
+      <div class="card-title">选择你的AI模型 <span class="en" style="font-size:10px;color:var(--text3);font-weight:400">Step 3: Choose Your AI Model</span></div>
+      <div class="card-sub">你已经有偏好的AI模型了吗？<br><span class="en" style="font-size:11px">Do you have a preferred AI model?</span></div>
+      <div class="opt-grid" style="flex-direction:column">
+        ${AI_PROVIDERS.map(p=>`
+          <div class="opt-btn ${state.apiProvider===p.id?'selected':''}" style="text-align:left;display:flex;align-items:center;gap:10px;min-width:100%" onclick="selectProvider('${p.id}')">
+            <span style="font-size:18px;flex-shrink:0">${getProviderIcon(p.id)}</span>
+            <span style="flex:1">${p.label}${p.id==='deepseek'?' <span style="font-size:10px;background:var(--green);color:#fff;padding:1px 6px;border-radius:3px;margin-left:2px">推荐</span>':''}<span class="en">${p.desc}</span></span>
+          </div>`).join('')}
+      </div>
+      <div style="text-align:center;margin:12px 0">
+        <button class="btn btn-outline btn-block" onclick="toggleApiGuide()">我还没有API密钥 / I don\'t have an API key yet</button>
+      </div>
+      ${state.apiProviderShowGuide?`
+        <div class="api-tips" style="margin-top:8px">
+          <div style="font-weight:600;margin-bottom:8px">📖 获取API密钥指南：</div>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <div><span style="font-weight:600">Step 1:</span> 访问 <a href="https://platform.deepseek.com" target="_blank">platform.deepseek.com</a><br><span style="font-size:11px">打开DeepSeek官方网站</span></div>
+            <div><span style="font-weight:600">Step 2:</span> 注册账号（用微信或邮箱）<br><span style="font-size:11px">支持微信扫码或邮箱注册</span></div>
+            <div><span style="font-weight:600">Step 3:</span> 进入API管理页面<br><span style="font-size:11px">在控制台中找到API Keys选项</span></div>
+            <div><span style="font-weight:600">Step 4:</span> 创建新的API密钥<br><span style="font-size:11px">点击"Create API Key"按钮</span></div>
+            <div><span style="font-weight:600">Step 5:</span> 复制密钥并粘贴到这里<br><span style="font-size:11px">保存好密钥，不要泄露给他人</span></div>
+          </div>
+          <div style="margin-top:10px;font-size:12px;color:var(--text2);border-top:1px solid #E8DCC8;padding-top:8px">
+            完成后，请选择一个上方模型继续。完成配置后，我们会在桌面应用中为你预填好配置。
+          </div>
+        </div>`:''}
+      <div class="step-nav">
+        <button class="btn btn-outline" onclick="goStep(2)">返回 Back</button>
+        <button class="btn btn-primary ${!state.apiProvider?'btn-disabled':''}" onclick="goStep(4)">下一步 Next</button>
+      </div>
+    </div>`;
+  updateDots(3);
+}
+
+function getProviderIcon(id) {
+  return {deepseek:'🧠',openai:'⚡',anthropic:'🌿',google:'🔮',local:'💻'}[id]||'🤖';
+}
+
+function selectProvider(id) {
+  state.apiProvider=id;
+  state.apiProviderShowGuide=false;
+  saveState();
+  renderOnboarding();
+}
+
+function toggleApiGuide() {
+  state.apiProvider='none';
+  state.apiProviderShowGuide=!state.apiProviderShowGuide;
+  saveState();
+  renderOnboarding();
+}
+
+function getProviderLabel(id) {
+  const p=AI_PROVIDERS.find(x=>x.id===id);
+  return p?p.label:id==='none'?'未选择':'AI';
+}
+
+function getProviderEn(id) {
+  const p=AI_PROVIDERS.find(x=>x.id===id);
+  return p?p.en:id==='none'?'Not selected':'AI';
+}
+
+function renderStep3(el) {
+  const maxTimeSinks=3;
+  el.innerHTML=`
+    <div class="step-dots" id="stepDots4"></div>
+    <div class="card">
+      <div class="card-title">第四步：工作流程与痛点 <span class="en" style="font-size:10px;color:var(--text3);font-weight:400">Step 4: Workflow & Pain Points</span></div>
       <div class="card-sub">你最大的时间消耗是什么？（最多选3项）<br><span class="en" style="font-size:11px">What takes most of your time? (max 3)</span></div>
       <div class="multi-count">已选 ${state.timeSinks.length}/${maxTimeSinks}</div>
       <div class="opt-grid">
@@ -574,11 +631,11 @@ function renderStep3(el) {
       <div class="card-sub" style="margin-top:12px">你希望AI帮你解决什么具体问题？<br><span class="en" style="font-size:11px">What specific problems should AI solve?</span></div>
       <textarea class="textarea-field" id="aiHelpText" placeholder="请用2-3句话描述，例如：我希望AI能帮我自动整理客户邮件、生成会议纪要、以及辅助我撰写合同模板……" oninput="state.aiHelpText=this.value;saveState()">${state.aiHelpText}</textarea>
       <div class="step-nav">
-        <button class="btn btn-outline" onclick="goStep(2)">返回 Back</button>
-        <button class="btn btn-primary" onclick="goStep(4)">查看推荐方案 Next</button>
+        <button class="btn btn-outline" onclick="goStep(3)">返回 Back</button>
+        <button class="btn btn-primary" onclick="goStep(5)">查看推荐方案 Next</button>
       </div>
     </div>`;
-  updateDots(3);
+  updateDots(4);
 }
 
 function toggleTimeSink(id) {
@@ -607,9 +664,9 @@ function renderStep4(el) {
   saveState();
   const plans=[PLANS.starter,PLANS.pro,PLANS.enterprise];
   el.innerHTML=`
-    <div class="step-dots" id="stepDots4"></div>
+    <div class="step-dots" id="stepDots5"></div>
     <div class="card">
-      <div class="card-title">第四步：方案推荐 <span class="en" style="font-size:10px;color:var(--text3);font-weight:400">Step 4: Plan Selection</span></div>
+      <div class="card-title">第五步：方案推荐 <span class="en" style="font-size:10px;color:var(--text3);font-weight:400">Step 5: Plan Selection</span></div>
       <div class="card-sub">根据你的情况，我推荐：<br><span class="en" style="font-size:11px">Based on your needs, I recommend:</span></div>
       <div class="plan-compare">
         ${plans.map(p=>{
@@ -629,12 +686,12 @@ function renderStep4(el) {
         ${rec.id==='enterprise'?'推荐理由：你使用多种工具且有团队协作需求，企业版提供完整的解决方案。':''}
       </div>
       <div class="step-nav">
-        <button class="btn btn-outline" onclick="goStep(3)">返回 Back</button>
-        ${state.planChosen?`<button class="btn btn-primary" onclick="goStep(5)">立即购买 Purchase</button>`:`<button class="btn btn-primary btn-disabled">请先选择方案</button>`}
+        <button class="btn btn-outline" onclick="goStep(4)">返回 Back</button>
+        ${state.planChosen?`<button class="btn btn-primary" onclick="goStep(6)">立即购买 Purchase</button>`:`<button class="btn btn-primary btn-disabled">请先选择方案</button>`}
       </div>
       ${state.planChosen&&state.planChosen!==rec.id?`<div style="text-align:center;margin-top:8px"><button class="btn btn-sm" style="color:var(--text2);background:none;border:none;cursor:pointer;font-size:12px;text-decoration:underline" onclick="state.planChosen=rec.id;saveState();renderOnboarding()">恢复推荐 Restore recommendation</button></div>`:''}
     </div>`;
-  updateDots(4);
+  updateDots(5);
 }
 
 function selectPlan(id) {
@@ -656,10 +713,10 @@ function recommendPlan() {
 function renderStep5(el) {
   const plan=getPlan(state.planChosen);
   el.innerHTML=`
-    <div class="step-dots" id="stepDots5"></div>
+    <div class="step-dots" id="stepDots6"></div>
     <div class="card" style="text-align:center">
       <div style="font-size:32px;margin-bottom:8px">📋</div>
-      <div class="card-title" style="justify-content:center">第五步：确认订单 <span class="en" style="font-size:10px;color:var(--text3);font-weight:400">Step 5: Order Confirmation</span></div>
+      <div class="card-title" style="justify-content:center">第六步：确认订单 <span class="en" style="font-size:10px;color:var(--text3);font-weight:400">Step 6: Order Confirmation</span></div>
       <div class="card-sub" style="text-align:center">请确认你的订单信息<br><span class="en" style="font-size:11px">Please confirm your order</span></div>
       <div class="pay-detail" style="text-align:left;margin-top:12px">
         <div class="pay-detail-row"><span class="label">计划 Plan</span><span class="value">${plan.name} ${plan.en}</span></div>
@@ -670,15 +727,17 @@ function renderStep5(el) {
       </div>
       <div class="step-nav" style="flex-direction:column;gap:8px">
         <button class="btn btn-primary btn-block btn-lg" onclick="openPayment()">确认并支付 Pay Now</button>
-        <button class="btn btn-outline btn-block" onclick="goStep(4)">返回修改 Back</button>
+        <button class="btn btn-outline btn-block" onclick="goStep(5)">返回修改 Back</button>
       </div>
     </div>`;
-  updateDots(5);
+  updateDots(6);
 }
 
 function renderStep6(el) {
+  const provLabel=getProviderLabel(state.apiProvider);
+  const provEn=getProviderEn(state.apiProvider);
   el.innerHTML=`
-    <div class="step-dots" id="stepDots6"></div>
+    <div class="step-dots" id="stepDots7"></div>
     <div class="card" style="text-align:center">
       <div style="font-size:48px;margin-bottom:8px">🎉</div>
       <div class="card-title" style="justify-content:center;font-size:18px">恭喜！你的灵犀AI助手正在为你配置...</div>
@@ -690,7 +749,7 @@ function renderStep6(el) {
         </div>
         <div class="progress-step active" id="stepConfigAI">
           <div class="check">⟳</div>
-          <div class="step-text">配置AI引擎<span class="en">Configuring AI engine</span></div>
+          <div class="step-text">配置${provLabel}引擎<span class="en">Configuring ${provEn} engine</span></div>
         </div>
         <div class="progress-step" id="stepLoadSkills">
           <div class="check"></div>
@@ -708,7 +767,7 @@ function renderStep6(el) {
       <button class="btn btn-primary btn-block" style="margin-top:12px" onclick="downloadProvisioningData()">下载配置 Download Config</button>
       <button class="btn btn-primary btn-block" style="margin-top:8px" onclick="finishOnboarding()">完成 Complete → 对话</button>
     </div>`;
-  updateDots(6);
+  updateDots(7);
   animateProgress();
 }
 
@@ -733,8 +792,13 @@ function animateProgress() {
 }
 
 function updateDots(step) {
-  const dots=document.querySelectorAll('[id^=stepDots] .step-dot');
-  if(dots.length)dots.forEach((d,i)=>{d.className='step-dot'+(i<step?' done':i===step?' active':'')});
+  const total=8;
+  document.querySelectorAll('[id^=stepDots]').forEach(c=>{
+    if(!c.querySelector('.step-dot')){
+      for(let i=0;i<total;i++){const d=document.createElement('div');d.className='step-dot';c.appendChild(d)}
+    }
+    c.querySelectorAll('.step-dot').forEach((d,i)=>{d.className='step-dot'+(i<step?' done':i===step?' active':'')});
+  });
 }
 
 function getProfLabel(id) {
@@ -787,7 +851,7 @@ function closeSuccess() {
   document.getElementById('successOverlay').classList.remove('show');
   document.getElementById('payBtn').disabled=false;
   document.getElementById('payBtn').textContent='立即支付';
-  state.currentStep=6;
+  state.currentStep=7;
   saveState();
   renderOnboarding();
   switchTab('onboarding');
@@ -945,7 +1009,8 @@ function downloadProvisioningData() {
     profession: state.profession || 'other',
     os: state.computer || 'mac',
     terminal_comfort: state.terminalComfort || 'never',
-    has_api_key: state.hasApiKey === 'yes',
+    api_provider: state.apiProvider || '',
+    api_provider_label: state.apiProvider ? (AI_PROVIDERS.find(p=>p.id===state.apiProvider)?.label || '未选择') : '',
     time_sinks: state.timeSinks,
     tools: state.dailyTools,
     ai_needs: state.aiHelpText || '',
@@ -988,7 +1053,7 @@ function renderSettings() {
       <div class="settings-section-title">技术信息 <span class="en" style="font-size:10px;color:var(--text3);font-weight:400">Tech Info</span></div>
       <div class="settings-row"><span class="label">电脑 <span class="en">Computer</span></span><span class="value ${!state.computer?'unset':''}">${state.computer==='mac'?'Mac':state.computer==='windows'?'Windows':'未设置'}</span></div>
       <div class="settings-row"><span class="label">终端熟练度 <span class="en">Terminal</span></span><span class="value ${!state.terminalComfort?'unset':''}">${TERMINAL_LEVELS.find(t=>t.id===state.terminalComfort)?.label||'未设置'}</span></div>
-      <div class="settings-row"><span class="label">API密钥 <span class="en">API Key</span></span><span class="value ${!state.hasApiKey?'unset':''}">${state.hasApiKey==='yes'?'已有 ✓':state.hasApiKey==='no'?'需要帮助':'未设置'}</span></div>
+      <div class="settings-row"><span class="label">AI模型 <span class="en">AI Model</span></span><span class="value ${!state.apiProvider?'unset':''}">${state.apiProvider?getProviderLabel(state.apiProvider)+' '+getProviderEn(state.apiProvider):'未选择'}</span></div>
     </div>
     <div class="settings-section">
       <div class="settings-section-title">工作流 <span class="en" style="font-size:10px;color:var(--text3);font-weight:400">Workflow</span></div>
