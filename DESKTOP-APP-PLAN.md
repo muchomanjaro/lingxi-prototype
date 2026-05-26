@@ -64,6 +64,34 @@
 
 ---
 
+### Cross-Cutting Design Principles
+
+These principles apply to every screen, every interaction, and every piece of UI text in the application.
+
+**Bilingual (CN Primary + EN Subtitles):**
+All UI text is displayed in Chinese as the primary language, with English subtitles in smaller gray text beneath every label, button, message, and instruction. Example:
+- Button: "开始使用" with gray subtitle "Start Using"
+- Error: "网络连接失败" with gray subtitle "Network connection failed"
+- Setting: "语言" with gray subtitle "Language"
+
+The application supports switching between CN-only and EN-only modes in Settings → General → Language. Until switched, the default display is always Chinese primary + English subtitle. Every UI element — every label, button, message, tooltip, toast, and dialog — follows this pattern from day one.
+
+**Security-First Messaging:**
+Every permission request (terminal access, file access, network access, microphone, screen recording) is accompanied by a contextual security note displayed at the point of the request. These are user-friendly explanations, not legal disclaimers:
+
+- "灵犀在本地运行。你的数据不会离开你的电脑。"
+- "你的API密钥仅存储在你的设备上。"
+- "我们无法访问你的文件。所有操作都在你的控制之下。"
+- "Hermes是开源软件，代码公开可审查。"
+- "灵犀仅在需要时连接网络。所有通信是加密的。"
+
+Security notes are shown at the moment the permission is requested, never buried in a settings page. The note appears as a subtle colored banner or inline text, not a blocking modal.
+
+**Conversational Setup:**
+The setup wizard is not a dashboard with fields — it is a step-by-step conversation. Each step explains WHY the user is doing something before showing HOW. Every permission request includes a security explanation. Progress is celebrated with encouraging Chinese copy at each step. The user is shown exactly one question or action per screen, with a clear path forward.
+
+---
+
 ## 2. Application Structure
 
 ### High-Level Architecture
@@ -213,72 +241,238 @@ App quits
 3. On first launch, macOS Gatekeeper warning appears — the app includes a guide in the UI to handle this.
 4. App starts → detects no config → shows Welcome screen.
 
-### Phase 2: Welcome Screen
+### Phase 2: Conversational Setup Wizard (Steps 1-8)
 
-Two paths presented with equal visual prominence:
+The wizard is not a dashboard dump. It walks the user through every step one at a time, like a friendly guide. Each screen shows exactly one question or action. Progress is indicated by step dots at the top and encouraging Chinese copy throughout.
+
+---
+
+**Step 1: 欢迎使用灵犀！**
+
+Full-screen welcome with the Lingxi logo and warm greeting — no navigation chrome, no sidebar, no fields:
+
+```
+👋 欢迎使用灵犀！让我帮你设置你的AI助手。
+灵犀是一款本地运行的AI助手。你的数据不会离开你的电脑。
+没有任何信息会被上传到云端。
+
+              [大号蓝色按钮]  开始设置 →
+```
+
+A single large friendly button. The user clicks → transitions to Step 2 with a slide animation.
+
+---
+
+**Step 2: 导入或全新设置**
+
+Two paths with equal visual prominence:
 
 **Path A: "我已经在微信上填过信息了" (I already set up on WeChat)**
 - User selects the onboarding JSON file downloaded from Aura's mini-program.
 - App validates JSON schema, extracts: profession, tier, skill pack selections, API key hint (partial).
-- Progress: skips directly to API key setup (Phase 4).
+- Shows a confirmation: "我已从你的微信信息中识别到以下内容，请确认是否正确：" with a summary card.
+- User confirms → jumps to Step 4 (Obsidian install, since environment checks and API key info may be embedded).
 
-**Path B: "我是第一次使用" (I'm new, guide me through)**
-- Multi-step wizard mirrors the mini-program onboarding.
-- Steps: profession → pain points → tier recommendation → skill pack selection → computer type.
-- At the end, generates the same JSON that the mini-program would produce.
-- User can save this JSON and also send it to their phone.
+**Path B: "我是第一次使用，引导我设置" (I'm new, guide me through)**
+- "太好了！我需要了解一些信息，为你推荐最合适的配置。只需要几分钟。"
+- Step-by-step questions (exactly one per screen):
+  - Profession selector (icon-based: 教师, 律师, 市场营销, 程序员, 其他)
+  - Pain points: "你平时花时间最多的三项工作是什么？" (free text, single textarea)
+  - Computer type: "你使用什么电脑？" (Mac / Windows / Linux — radio buttons)
+  - AI experience: "你之前用过AI工具吗？" (Never / A few times / Regularly — radio buttons)
+- At the end, generates the same JSON that Aura's mini-program would produce.
+- User can save this JSON and also send it to their phone via QR code.
 
-### Phase 3: Environment Check (Rust backend)
+---
 
-After onboarding data is loaded, Rust runs pre-flight checks:
+**Step 3: 环境检测与安全说明**
 
-| Check | Pass Condition | Failure Handling |
-|-------|---------------|------------------|
-| OS version | macOS ≥ 12 (Monterey) | Show error with next steps |
-| Architecture | arm64 or x86_64 | Adjust agent binary download |
-| Disk space | > 500 MB free | Warn user, offer to locate temp dir on external drive |
-| Python 3 | `python3 --version` ≥ 3.10 | Offer to install via `brew` or official installer |
-| Git | `git --version` | Offer to install via Xcode CLI tools |
-| Network | Can reach registry / GitHub | Allow offline mode with cached skills |
-| Rosetta 2 (if Intel binary on Apple Silicon) | `arch -x86_64 true` | Offer to install Rosetta 2 |
-| Audio device | Microphone available (for voice) | Warn but allow skip |
-| Screen recording permission | Available (for screenshot) | Guide user to enable in System Preferences |
+Rust runs pre-flight checks. Before any permission-sensitive check, a security explanation card slides in:
 
-Each check shows a green checkmark or a red X with a "Fix it" button. Progress persists across app restarts.
+```
+🔒 安全说明
+灵犀在本地运行。你的数据不会离开你的电脑。
+我需要访问你的终端才能安装软件。这是目前最安全的AI架构之一。
+Hermes是开源软件，代码公开可审查。
+```
 
-### Phase 4: API Key Setup
+Each check displays in sequence with its own security note where applicable:
 
-1. UI shows: "需要一个大模型API密钥才能使用。推荐使用 DeepSeek（国内可用，性价比高）。"
-2. User clicks "如何获取密钥？" (How to get a key?) → in-app guide with screenshots walks through DeepSeek signup → create API key → copy key.
-3. User pastes key → Rust stores it encrypted in macOS Keychain.
-4. Rust runs a test: sends a simple request (e.g., "请回复'连接成功'") to the API.
-5. If test passes: green checkmark, proceed.
-6. If test fails: show error message with troubleshooting steps (check balance, check key permissions, try different endpoint).
+| Check | Pass Condition | Security Note |
+|-------|---------------|---------------|
+| OS version | macOS ≥ 12 (Monterey) | — |
+| Architecture | arm64 or x86_64 | — |
+| Disk space | > 500 MB free | "灵犀的所有文件存储在本地。我们无法访问其他文件。" |
+| Python 3 | `python3 --version` ≥ 3.10 | "Python是Hermes的运行环境。仅用于本地执行。" |
+| Git | `git --version` | — |
+| Network | Can reach registry / GitHub | "灵犀仅在需要时连接网络。所有通信是加密的。" |
+| Audio device | Microphone available | "语音功能仅在您点击麦克风按钮时激活。" |
+| Screen recording | Available (for screenshot) | "屏幕截图仅在您手动触发时拍摄。" |
 
-### Phase 5: Hermes Installation
+Each check shows a spinner → green checkmark or red X with "Fix it" button. Security notes appear as subtle gray text beneath each row. Progress persists across app restarts.
 
-Rust backend handles all of this. UI shows a progress stepper with status messages in Chinese.
+---
 
-1. **Create workspace:** `~/lingxi/agent/`
-2. **Clone/fetch Hermes:** If `~/lingxi/agent/` exists and is valid, run `git pull`. If not, `git clone` from the registry mirror (Gitee preferred for China, GitHub fallback with proxy).
-3. **Create venv:** `python3 -m venv venv`
-4. **Install dependencies:** `venv/bin/pip install -r requirements.txt` (with `--no-index --find-links ./vendor` if vendor directory exists, to avoid GFW issues).
-5. **Write config:** Rust generates `config.yaml` from onboarding data + API key reference. Agent-specific configurations (skill pack selections, model settings, Chinese interface flag).
-6. **Install skill packs:** Download packs from registry, unpack to `~/lingxi/skills/`, verify checksums, generate manifest.
-7. **Configure default profiles:** Write the six Roman Cohort profiles to `~/.lingxi/profiles.json`.
-8. **Verify installation:** Run `python3 -c "from hermes import core; print('OK')"` (or equivalent smoke test). If this fails, show error log and offer to retry.
+**Step 4: 自动安装Obsidian**
 
-Each step shows: a spinner (in progress), green checkmark (done), or red X with retry button (failed). User cannot proceed until all steps pass.
+After environment checks pass, the wizard checks for Obsidian:
 
-### Phase 6: First Launch
+"Obsidian将用于存储你的AI记忆和知识库。所有数据保存在你的电脑上。"
 
+**If Obsidian is already installed:**
+```
+✅ 已检测到Obsidian (/Applications/Obsidian.app)
+将为你配置一个名为"灵犀"的专属资料库。
+```
+Rust creates a vault at `~/Documents/灵犀/` with initial configuration for Hermes memory integration.
+
+**If Obsidian is not installed:**
+```
+⏳ Obsidian未安装在你的电脑上。我将自动为你下载并安装。
+下载完成后会自动安装到你的 Applications 文件夹。
+只需几分钟。
+```
+- Rust backend downloads the macOS `.dmg` from obsidian.com (with China-mirror fallback).
+- Shows a download progress bar with status text in Chinese:
+  ```
+  正在下载Obsidian...
+  ████████░░░░ 65% | 下载中...
+  ```
+- Once downloaded, mounts the `.dmg` and copies `Obsidian.app` to `/Applications/`.
+- Verifies: checks `/Applications/Obsidian.app` exists and is valid.
+- Creates vault at `~/Documents/灵犀/`.
+
+Security note displayed during this step:
+```
+🔒 安全说明
+Obsidian是一款本地笔记应用。你的笔记存储在
+~/Documents/灵犀/ 目录中。我们无法访问你的其他笔记。
+所有AI记忆数据与你自己的笔记是分开的。
+```
+
+---
+
+**Step 5: API密钥设置**
+
+```
+🔑 为什么需要API密钥？
+灵犀通过API密钥连接大模型（如DeepSeek）来回答问题。
+你的API密钥仅保存在你的电脑上，我们永远不会看到它。
+所有对话数据均在你的本地电脑处理，不会上传到云端。
+```
+
+1. "推荐使用DeepSeek（国内可用，性价比高）。" Click "如何获取密钥？" → in-app guide with screenshots walks through DeepSeek signup → create API key → copy key.
+
+2. User pastes key into the input field.
+
+   Security note next to the paste field:
+   ```
+   🔒 安全说明
+   你的API密钥仅存储在你的设备上（macOS Keychain加密）。
+   即使灵犀开发者也无法读取你的密钥。
+   ```
+
+3. Rust stores it encrypted in macOS Keychain.
+
+4. Rust runs a test: sends a simple request ("请回复'连接成功'") to the API.
+
+5. If test passes: green checkmark with "✅ 连接成功！你的API密钥工作正常。"
+   If test fails: error message with troubleshooting (check balance, check key permissions, try different endpoint).
+
+---
+
+**Step 6: 安装Hermes引擎 (with progress bar)**
+
+Rust backend handles all installation. UI shows a single animated progress bar with Chinese status messages updating in real time:
+
+```
+灵犀AI引擎安装中...
+████████░░░░░░░░ 40% | 正在安装依赖...
+
+安装步骤：
+✅ 环境检测通过
+⏳ 正在安装Hermes引擎...
+⏳ 正在配置Python环境...
+⏳ 正在安装依赖包...
+```
+
+**Sequential steps (spinner → checkmark):**
+1. **创建工作空间:** `~/lingxi/agent/`
+2. **克隆Hermes引擎:** If `~/lingxi/agent/` exists and is valid, `git pull`. If not, `git clone` from registry mirror (Gitee preferred for China, GitHub fallback with proxy).
+3. **创建虚拟环境:** `python3 -m venv venv`
+4. **安装依赖:** `venv/bin/pip install -r requirements.txt` (with `--no-index --find-links ./vendor` if vendor directory exists, to avoid GFW issues).
+5. **写入配置:** Rust generates `config.yaml` from onboarding data + API key reference.
+6. **配置默认档案:** Write the six Roman Cohort profiles to `~/.lingxi/profiles.json`.
+7. **验证安装:** Run smoke test. If it fails, show error log and offer retry.
+
+Security note during installation:
+```
+🔒 安全说明
+Hermes是开源软件，代码公开可审查。
+安装的Python包来自官方源，校验码已验证。
+```
+
+User cannot proceed until all steps pass. Each completed step shows a green checkmark. Failed steps show a red X with retry button.
+
+---
+
+**Step 7: 加载技能包**
+
+Based on the user's profession (identified in Step 2), the wizard loads skill packs:
+
+```
+📦 正在根据你的职业加载技能包
+
+根据你的职业（教师），已为你安装以下技能包：
+✅ 教师通用包 — 教案编写、作业批改、家校沟通
+✅ 文件操作包 — 文档阅读、格式转换、文件搜索
+```
+
+Each pack shows its icon, name, and one-line description. User can toggle individual packs on/off below the list before proceeding.
+
+Security note:
+```
+🔒 安全说明
+技能包仅包含提示词模板和配置。它们不会自动访问你的
+文件或数据，除非你在对话中主动要求。
+```
+
+---
+
+**Step 8: 最终确认画面**
+
+All installation steps complete. The wizard shows a comprehensive summary:
+
+```
+🎉 一切都设置好了。灵犀AI助手已准备就绪。
+
+检查下面列出的每一项，确认是否符合你的期望。
+
+  ✅ 灵犀应用已安装                  → /Applications/灵犀.app
+  ✅ Obsidian已安装并配置             → /Applications/Obsidian.app
+  ✅ 灵犀资料库已创建                 → ~/Documents/灵犀/
+  ✅ Hermes引擎已安装                 → ~/lingxi/agent/
+  ✅ Python环境已配置                 → Python 3.12
+  ✅ API密钥已配置                    → DeepSeek (macOS Keychain加密存储)
+  ✅ 技能包已加载                     → 教师通用包 / 文件操作包
+  ✅ 六个默认助手档案已配置            → Cicero / Marcus / Augustus / Seneca / Enobarbus / Turbo-Coder
+
+              [大号绿色按钮]  一切就绪，开始使用！ / All set, start using!
+```
+
+Each item has a green checkmark. The layout is clean, one item per line. Below in smaller gray text:
+```
+所有配置数据存储在本地 (~/.lingxi/)。你的数据不会离开你的电脑。
+```
+
+When the user clicks "一切就绪，开始使用！":
 1. Rust spawns Hermes agent as a child process.
-2. Sends an init message: `{ "type": "init", "config": "..." }` via stdin.
+2. Sends init message via stdin.
 3. Agent responds with `{ "type": "ready", "version": "0.1.0" }`.
 4. UI transitions from wizard to Dashboard.
-5. Auto-start prompt appears: "是否希望开机自动启动Hermes？" (Would you like Hermes to start automatically when your computer starts?) — Yes / Not now.
+5. Auto-start prompt appears: "是否希望开机自动启动灵犀？" — Yes / Not now.
 
-### Phase 7: Setup Complete
+### Phase 3: Setup Complete
 
 - Wizard hides permanently (config flag `setup_completed: true`).
 - App launches into Dashboard by default on subsequent starts.
@@ -294,16 +488,16 @@ A multi-step, linear wizard. No sidebar or navigation chrome — full-screen foc
 
 Visual style: Clean cards, large Chinese text, progress dots at top. Warm brand colors. Encouraging tone in all copy.
 
-**Steps:**
+**Steps (conversational, one per screen):**
 
-1. **Welcome** — App logo, "欢迎使用Hermes智能助手", two buttons (Import / New setup).
-2. **Profession** (if new) — Icon-based profession selector (教师, 律师, 市场营销, 程序员, 其他).
-3. **Details** (if new) — Free-text questions: "你平时花时间最多的三项工作是什么？" "你使用什么电脑？" "你之前用过AI工具吗？"
-4. **Tier** (if new) — Tier cards with pricing, features comparison. Selected tier highlights.
-5. **API Key** — Paste field + "如何获取密钥？" collapsible guide + Test button. Optionally add multiple provider keys.
-6. **Environment Check** — Animated progress list (see Phase 3 above). Each check animates in sequentially.
-7. **Installing** — Progress bar with status updates (Cloning... Installing dependencies... Configuring skills... Setting up profiles...).
-8. **Ready** — Success animation, "一切就绪！", button to open dashboard.
+1. **欢迎** — Full-screen welcome: "欢迎使用灵犀！让我帮你设置你的AI助手。" Single large button. English subtitle: "Welcome to Lingxi! Let me help you set up your AI assistant."
+2. **导入或全新设置** — Two paths: Import onboarding JSON from WeChat mini-program, or full wizard (profession → pain points → computer type → AI experience). Each question is one screen with Chinese label + English subtitle.
+3. **环境检测与安全说明** — Pre-flight checks with contextual security notes. Before every permission check, a security explanation card explains WHY the access is needed. "灵犀在本地运行。你的数据不会离开你的电脑。"
+4. **自动安装Obsidian** — Detects Obsidian. If absent, auto-downloads from obsidian.com with progress bar. Creates "灵犀" vault at `~/Documents/灵犀/`. Security note: "Obsidian用于存储你的AI记忆和知识库。所有数据保存在你的电脑上。"
+5. **API密钥设置** — Guide user to DeepSeek, paste key, test connection. Security note next to input: "你的API密钥仅保存在你的电脑上，我们永远不会看到它。"
+6. **安装Hermes引擎** — Progress bar with real-time Chinese status: cloning, venv, pip install, config write. Security note: "Hermes是开源软件，代码公开可审查。"
+7. **加载技能包** — Profession-matched skill packs with per-pack toggle. Each shows icon, name, description. Security note: "技能包仅包含提示词模板，不会自动访问你的文件。"
+8. **最终确认** — Full summary with green checkmarks for every configured item. "一切都设置好了。灵犀AI助手已准备就绪。" Button: "一切就绪，开始使用！" / "All set, start using!"
 
 State persistence: Wizard state saved to `~/.lingxi/wizard_state.json`. If app crashes mid-setup, it resumes from the last completed step on next launch.
 
