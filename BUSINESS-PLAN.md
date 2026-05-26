@@ -509,7 +509,7 @@ The setup script checks macOS version ≥ 12 (Monterey), verifies architecture (
 
 The agent binary uses claude-sonnet-4-20260514 (default, tier-dependent) with Chinese interface enabled, skill packs loaded from ~/.hermes/skills/, and no raw terminal access — the user types natural language only. File access covers Desktop, Documents, and Downloads folders by default.
 
-### Desktop Application (Jiesi GUI)
+### Desktop Application (Jié Sī GUI)
 
 A native macOS desktop application ("捷思") replaces the zip-based delivery as the primary runtime plane. Built with **Tauri** (Rust backend + React/TypeScript frontend) for a 5-10 MB bundle — critical for WeChat file transfer where 150 MB Electron apps are impractical.
 

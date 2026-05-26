@@ -1,4 +1,4 @@
-# Jiesi Hermes Agent — Desktop GUI Application Architecture Plan
+# Jié Sī Hermes Agent — Desktop GUI Application Architecture Plan
 
 ## Table of Contents
 
@@ -249,7 +249,7 @@ The wizard is not a dashboard dump. It walks the user through every step one at 
 
 **Step 1: 欢迎使用捷思！**
 
-Full-screen welcome with the Jiesi logo and warm greeting — no navigation chrome, no sidebar, no fields:
+Full-screen welcome with the Jié Sī logo and warm greeting — no navigation chrome, no sidebar, no fields:
 
 ```
 👋 欢迎使用捷思！让我帮你设置你的AI助手。
@@ -519,7 +519,7 @@ Visual style: Clean cards, large Chinese text, progress dots at top. Warm brand 
 
 **Steps (conversational, one per screen):**
 
-1. **欢迎** — Full-screen welcome: "欢迎使用捷思！让我帮你设置你的AI助手。" Single large button. English subtitle: "Welcome to Jiesi! Let me help you set up your AI assistant."
+1. **欢迎** — Full-screen welcome: "欢迎使用捷思！让我帮你设置你的AI助手。" Single large button. English subtitle: "Welcome to Jié Sī! Let me help you set up your AI assistant."
 2. **导入或全新设置** — Two paths: Import onboarding JSON from WeChat mini-program, or full wizard (profession → pain points → computer type → AI experience). Each question is one screen with Chinese label + English subtitle.
 3. **环境检测与安全说明** — Pre-flight checks with contextual security notes. Before every permission check, a security explanation card explains WHY the access is needed. "捷思在本地运行。你的数据不会离开你的电脑。"
 4. **自动安装Obsidian** — Detects Obsidian. If absent, auto-downloads from obsidian.com with progress bar. Creates "捷思" vault at `~/Documents/捷思/`. Security note: "Obsidian用于存储你的AI记忆和知识库。所有数据保存在你的电脑上。"
@@ -1265,14 +1265,14 @@ Primary interaction surface. Full-height, no scroll on page level — only the m
 
 2. **3 days of inactivity:**
    - Desktop notification with richer content:
-     "捷思想你了！有新的技能包可用。" — "Jiesi misses you! New skill packs are available."
+     "捷思想你了！有新的技能包可用。" — "Jié Sī misses you! New skill packs are available."
    - Includes a dynamic note about what's new (e.g., "教师技能包已更新了3个新模板" if applicable).
    - Badge count appears on the app's dock/taskbar icon.
 
 3. **7 days of inactivity:**
    - If any gateways are configured (WeChat, Telegram, Discord, Email), send a follow-up message through the gateway bridge:
      - WeChat: "好久不见！捷思有了新功能，来看看吧 😊"
-     - Email: "Jiesi Hermes — 你最近还好吗？" with a brief new-feature summary
+     - Email: "Jié Sī Hermes — 你最近还好吗？" with a brief new-feature summary
      - Telegram/Discord: similar message in the configured channel
    - If no gateways are configured, escalate to a more prominent desktop notification.
    - Reuses the existing Gateway Bridge module — no new infrastructure needed.
