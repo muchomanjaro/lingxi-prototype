@@ -438,6 +438,7 @@ function renderOnboarding() {
       </div>
       <div class="card" style="text-align:center">
         <p style="font-size:13px;color:var(--text2);margin-bottom:12px">你的专属AI助手正在为你服务</p>
+        <button class="btn btn-primary btn-block" style="margin-bottom:8px" onclick="downloadProvisioningData()">下载配置 Download Config</button>
         <button class="btn btn-outline btn-block" onclick="resetOnboarding()">重新开始引导 Restart Onboarding</button>
       </div>`;
     return;
@@ -704,7 +705,8 @@ function renderStep6(el) {
     <div class="card" style="text-align:center">
       <p style="font-size:13px;color:var(--text2);line-height:1.6">我们将通过微信联系你。<br>大约30-60分钟后你的专属助手就准备好了。</p>
       <p style="font-size:11px;color:var(--text3);margin-top:8px">We will contact you via WeChat. Your专属 assistant will be ready in 30-60 minutes.</p>
-      <button class="btn btn-primary btn-block" style="margin-top:12px" onclick="finishOnboarding()">完成 Complete → 对话</button>
+      <button class="btn btn-primary btn-block" style="margin-top:12px" onclick="downloadProvisioningData()">下载配置 Download Config</button>
+      <button class="btn btn-primary btn-block" style="margin-top:8px" onclick="finishOnboarding()">完成 Complete → 对话</button>
     </div>`;
   updateDots(6);
   animateProgress();
@@ -933,6 +935,35 @@ function generateAuraResponse(userText) {
   renderChat();
 }
 
+/* ===== EXPORT PROVISIONING DATA ===== */
+
+function downloadProvisioningData() {
+  const plan = getPlan(state.planChosen);
+  const data = {
+    name: state.name || '',
+    wechat_id: state.wechatId || '',
+    profession: state.profession || 'other',
+    os: state.computer || 'mac',
+    terminal_comfort: state.terminalComfort || 'never',
+    has_api_key: state.hasApiKey === 'yes',
+    time_sinks: state.timeSinks,
+    tools: state.dailyTools,
+    ai_needs: state.aiHelpText || '',
+    plan: state.planChosen || 'starter',
+    plan_price: plan ? plan.price : 1999,
+    status: state.activated ? 'activated' : (state.paymentDone ? 'pending' : 'pending')
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'lingxi-config-' + (state.name || 'user') + '.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 /* ===== SETTINGS ===== */
 
 function renderSettings() {
@@ -981,6 +1012,9 @@ function renderSettings() {
         所有数据存储在本地浏览器中 (localStorage)。我们不会将你的数据上传到服务器。你可以随时清除数据或重新开始引导。
       </div>
     </div>
+    <button class="btn btn-primary btn-block" style="margin-top:8px" onclick="downloadProvisioningData()">
+      下载配置 Download Config
+    </button>
     <button class="btn btn-outline btn-block" style="margin-top:8px;border-color:#FF3B30;color:#FF3B30" onclick="resetOnboarding()">
       重新开始引导 Restart Onboarding
     </button>
