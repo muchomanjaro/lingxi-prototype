@@ -1,0 +1,24 @@
+{
+  "name": "李律师",
+  "wechat_id": "lawyer_li",
+  "profession": "lawyer",
+  "profession_label": "律师",
+  "os": "mac",
+  "terminal_comfort": "copy_paste",
+  "terminal_comfort_label": "可以复制粘贴命令",
+  "has_api_key": true,
+  "time_sinks": [
+    "document_review",
+    "legal_research",
+    "client_followup"
+  ],
+  "time_sinks_labels": ["合同审查", "法律研究", "客户跟进"],
+  "tools": ["wechat", "email", "calendar", "docs"],
+  "tools_labels": ["微信", "邮件", "日历", "文档"],
+  "ai_needs": "希望AI帮我审查合同关键条款，快速检索相关案例法条，以及自动生成法律服务建议书初稿。",
+  "plan": "enterprise",
+  "plan_label": "企业版",
+  "plan_price": 14999,
+  "status": "activated",
+  "onboarded_at": "2026-05-26T10:30:00Z"
+}

@@ -1,0 +1,24 @@
+{
+  "name": "王老师",
+  "wechat_id": "wanglaoshi_1985",
+  "profession": "teacher",
+  "profession_label": "教师",
+  "os": "mac",
+  "terminal_comfort": "never",
+  "terminal_comfort_label": "从来没碰过",
+  "has_api_key": false,
+  "time_sinks": [
+    "grading",
+    "lesson_planning",
+    "parent_comms"
+  ],
+  "time_sinks_labels": ["批改作业", "备课", "家长沟通"],
+  "tools": ["wechat", "email", "excel", "docs"],
+  "tools_labels": ["微信", "邮件", "Excel", "文档"],
+  "ai_needs": "我希望AI能帮我自动批改选择题和填空题，生成教案模板，以及根据学生成绩自动生成家长会沟通要点。",
+  "plan": "pro",
+  "plan_label": "专业版",
+  "plan_price": 4999,
+  "status": "activated",
+  "onboarded_at": "2026-05-26T10:00:00Z"
+}

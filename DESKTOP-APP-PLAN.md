@@ -1,4 +1,4 @@
-# Lingxi Hermes Agent — Desktop GUI Application Architecture Plan
+# Jiesi Hermes Agent — Desktop GUI Application Architecture Plan
 
 ## Table of Contents
 
@@ -79,11 +79,11 @@ The application supports switching between CN-only and EN-only modes in Settings
 **Security-First Messaging:**
 Every permission request (terminal access, file access, network access, microphone, screen recording) is accompanied by a contextual security note displayed at the point of the request. These are user-friendly explanations, not legal disclaimers:
 
-- "灵犀在本地运行。你的数据不会离开你的电脑。"
+- "捷思在本地运行。你的数据不会离开你的电脑。"
 - "你的API密钥仅存储在你的设备上。"
 - "我们无法访问你的文件。所有操作都在你的控制之下。"
 - "Hermes是开源软件，代码公开可审查。"
-- "灵犀仅在需要时连接网络。所有通信是加密的。"
+- "捷思仅在需要时连接网络。所有通信是加密的。"
 
 Security notes are shown at the moment the permission is requested, never buried in a settings page. The note appears as a subtle colored banner or inline text, not a blocking modal.
 
@@ -247,13 +247,13 @@ The wizard is not a dashboard dump. It walks the user through every step one at 
 
 ---
 
-**Step 1: 欢迎使用灵犀！**
+**Step 1: 欢迎使用捷思！**
 
-Full-screen welcome with the Lingxi logo and warm greeting — no navigation chrome, no sidebar, no fields:
+Full-screen welcome with the Jiesi logo and warm greeting — no navigation chrome, no sidebar, no fields:
 
 ```
-👋 欢迎使用灵犀！让我帮你设置你的AI助手。
-灵犀是一款本地运行的AI助手。你的数据不会离开你的电脑。
+👋 欢迎使用捷思！让我帮你设置你的AI助手。
+捷思是一款本地运行的AI助手。你的数据不会离开你的电脑。
 没有任何信息会被上传到云端。
 
               [大号蓝色按钮]  开始设置 →
@@ -291,7 +291,7 @@ Rust runs pre-flight checks. Before any permission-sensitive check, a security e
 
 ```
 🔒 安全说明
-灵犀在本地运行。你的数据不会离开你的电脑。
+捷思在本地运行。你的数据不会离开你的电脑。
 我需要访问你的终端才能安装软件。这是目前最安全的AI架构之一。
 Hermes是开源软件，代码公开可审查。
 ```
@@ -302,10 +302,10 @@ Each check displays in sequence with its own security note where applicable:
 |-------|---------------|---------------|
 | OS version | macOS ≥ 12 (Monterey) | — |
 | Architecture | arm64 or x86_64 | — |
-| Disk space | > 500 MB free | "灵犀的所有文件存储在本地。我们无法访问其他文件。" |
+| Disk space | > 500 MB free | "捷思的所有文件存储在本地。我们无法访问其他文件。" |
 | Python 3 | `python3 --version` ≥ 3.10 | "Python是Hermes的运行环境。仅用于本地执行。" |
 | Git | `git --version` | — |
-| Network | Can reach registry / GitHub | "灵犀仅在需要时连接网络。所有通信是加密的。" |
+| Network | Can reach registry / GitHub | "捷思仅在需要时连接网络。所有通信是加密的。" |
 | Audio device | Microphone available | "语音功能仅在您点击麦克风按钮时激活。" |
 | Screen recording | Available (for screenshot) | "屏幕截图仅在您手动触发时拍摄。" |
 
@@ -322,9 +322,9 @@ After environment checks pass, the wizard checks for Obsidian:
 **If Obsidian is already installed:**
 ```
 ✅ 已检测到Obsidian (/Applications/Obsidian.app)
-将为你配置一个名为"灵犀"的专属资料库。
+将为你配置一个名为"捷思"的专属资料库。
 ```
-Rust creates a vault at `~/Documents/灵犀/` with initial configuration for Hermes memory integration.
+Rust creates a vault at `~/Documents/捷思/` with initial configuration for Hermes memory integration.
 
 **If Obsidian is not installed:**
 ```
@@ -340,13 +340,13 @@ Rust creates a vault at `~/Documents/灵犀/` with initial configuration for Her
   ```
 - Once downloaded, mounts the `.dmg` and copies `Obsidian.app` to `/Applications/`.
 - Verifies: checks `/Applications/Obsidian.app` exists and is valid.
-- Creates vault at `~/Documents/灵犀/`.
+- Creates vault at `~/Documents/捷思/`.
 
 Security note displayed during this step:
 ```
 🔒 安全说明
 Obsidian是一款本地笔记应用。你的笔记存储在
-~/Documents/灵犀/ 目录中。我们无法访问你的其他笔记。
+~/Documents/捷思/ 目录中。我们无法访问你的其他笔记。
 所有AI记忆数据与你自己的笔记是分开的。
 ```
 
@@ -356,7 +356,7 @@ Obsidian是一款本地笔记应用。你的笔记存储在
 
 ```
 🔑 为什么需要API密钥？
-灵犀通过API密钥连接大模型（如DeepSeek）来回答问题。
+捷思通过API密钥连接大模型（如DeepSeek）来回答问题。
 你的API密钥仅保存在你的电脑上，我们永远不会看到它。
 所有对话数据均在你的本地电脑处理，不会上传到云端。
 ```
@@ -369,7 +369,7 @@ Obsidian是一款本地笔记应用。你的笔记存储在
    ```
    🔒 安全说明
    你的API密钥仅存储在你的设备上（macOS Keychain加密）。
-   即使灵犀开发者也无法读取你的密钥。
+   即使捷思开发者也无法读取你的密钥。
    ```
 
 3. Rust stores it encrypted in macOS Keychain.
@@ -386,7 +386,7 @@ Obsidian是一款本地笔记应用。你的笔记存储在
 Rust backend handles all installation. UI shows a single animated progress bar with Chinese status messages updating in real time:
 
 ```
-灵犀AI引擎安装中...
+捷思AI引擎安装中...
 ████████░░░░░░░░ 40% | 正在安装依赖...
 
 安装步骤：
@@ -444,13 +444,13 @@ Security note:
 All installation steps complete. The wizard shows a comprehensive summary:
 
 ```
-🎉 一切都设置好了。灵犀AI助手已准备就绪。
+🎉 一切都设置好了。捷思AI助手已准备就绪。
 
 检查下面列出的每一项，确认是否符合你的期望。
 
-  ✅ 灵犀应用已安装                  → /Applications/灵犀.app
+  ✅ 捷思应用已安装                  → /Applications/捷思.app
   ✅ Obsidian已安装并配置             → /Applications/Obsidian.app
-  ✅ 灵犀资料库已创建                 → ~/Documents/灵犀/
+  ✅ 捷思资料库已创建                 → ~/Documents/捷思/
   ✅ Hermes引擎已安装                 → ~/lingxi/agent/
   ✅ Python环境已配置                 → Python 3.12
   ✅ API密钥已配置                    → DeepSeek (macOS Keychain加密存储)
@@ -469,7 +469,7 @@ When the user clicks "一切就绪，开始使用！":
 1. Rust spawns Hermes agent as a child process.
 2. Sends init message via stdin.
 3. Agent responds with `{ "type": "ready", "version": "0.1.0" }`.
-4. Auto-start prompt appears: "是否希望开机自动启动灵犀？" — Yes / Not now.
+4. Auto-start prompt appears: "是否希望开机自动启动捷思？" — Yes / Not now.
 
 ### Step 9: 试试这些入门任务！ — Quick Start Overlay
 
@@ -490,7 +490,7 @@ After the auto-start preference is set, the user is NOT taken to an empty Dashbo
   [🌐] 翻译这篇英文文章到中文
         保持原意，通顺自然
 
-选择一个任务，灵犀会立即开始工作。        [稍后再说]
+选择一个任务，捷思会立即开始工作。        [稍后再说]
 ```
 
 - The 3-4 example prompts are generated dynamically from the user's profession (identified in Step 2). The teacher example above becomes lawyer prompts (contract review, legal memo, case research), marketer prompts (campaign brief, copy edit, competitor analysis), or programmer prompts (code review, bug analysis, architecture design) based on profession.
@@ -519,14 +519,14 @@ Visual style: Clean cards, large Chinese text, progress dots at top. Warm brand 
 
 **Steps (conversational, one per screen):**
 
-1. **欢迎** — Full-screen welcome: "欢迎使用灵犀！让我帮你设置你的AI助手。" Single large button. English subtitle: "Welcome to Lingxi! Let me help you set up your AI assistant."
+1. **欢迎** — Full-screen welcome: "欢迎使用捷思！让我帮你设置你的AI助手。" Single large button. English subtitle: "Welcome to Jiesi! Let me help you set up your AI assistant."
 2. **导入或全新设置** — Two paths: Import onboarding JSON from WeChat mini-program, or full wizard (profession → pain points → computer type → AI experience). Each question is one screen with Chinese label + English subtitle.
-3. **环境检测与安全说明** — Pre-flight checks with contextual security notes. Before every permission check, a security explanation card explains WHY the access is needed. "灵犀在本地运行。你的数据不会离开你的电脑。"
-4. **自动安装Obsidian** — Detects Obsidian. If absent, auto-downloads from obsidian.com with progress bar. Creates "灵犀" vault at `~/Documents/灵犀/`. Security note: "Obsidian用于存储你的AI记忆和知识库。所有数据保存在你的电脑上。"
+3. **环境检测与安全说明** — Pre-flight checks with contextual security notes. Before every permission check, a security explanation card explains WHY the access is needed. "捷思在本地运行。你的数据不会离开你的电脑。"
+4. **自动安装Obsidian** — Detects Obsidian. If absent, auto-downloads from obsidian.com with progress bar. Creates "捷思" vault at `~/Documents/捷思/`. Security note: "Obsidian用于存储你的AI记忆和知识库。所有数据保存在你的电脑上。"
 5. **API密钥设置** — Guide user to DeepSeek, paste key, test connection. Security note next to input: "你的API密钥仅保存在你的电脑上，我们永远不会看到它。"
 6. **安装Hermes引擎** — Progress bar with real-time Chinese status: cloning, venv, pip install, config write. Security note: "Hermes是开源软件，代码公开可审查。"
 7. **加载技能包** — Profession-matched skill packs with per-pack toggle. Each shows icon, name, description. Security note: "技能包仅包含提示词模板，不会自动访问你的文件。"
-8. **最终确认** — Full summary with green checkmarks for every configured item. "一切都设置好了。灵犀AI助手已准备就绪。" Button: "一切就绪，开始使用！" / "All set, start using!"
+8. **最终确认** — Full summary with green checkmarks for every configured item. "一切都设置好了。捷思AI助手已准备就绪。" Button: "一切就绪，开始使用！" / "All set, start using!"
 9. **入门引导** — Quick Start overlay with 3-4 profession-specific example prompts (generated from Step 2 data). Click a prompt → opens Chat, agent responds in real time. Encouragement banner after first response: "不错吧？试试自己输入一个问题，或者选择另一个入门任务。" Dismiss to Dashboard. Only shown once.
 
 State persistence: Wizard state saved to `~/.lingxi/wizard_state.json`. If app crashes mid-setup, it resumes from the last completed step on next launch.
@@ -1265,14 +1265,14 @@ Primary interaction surface. Full-height, no scroll on page level — only the m
 
 2. **3 days of inactivity:**
    - Desktop notification with richer content:
-     "灵犀想你了！有新的技能包可用。" — "Lingxi misses you! New skill packs are available."
+     "捷思想你了！有新的技能包可用。" — "Jiesi misses you! New skill packs are available."
    - Includes a dynamic note about what's new (e.g., "教师技能包已更新了3个新模板" if applicable).
    - Badge count appears on the app's dock/taskbar icon.
 
 3. **7 days of inactivity:**
    - If any gateways are configured (WeChat, Telegram, Discord, Email), send a follow-up message through the gateway bridge:
-     - WeChat: "好久不见！灵犀有了新功能，来看看吧 😊"
-     - Email: "Lingxi Hermes — 你最近还好吗？" with a brief new-feature summary
+     - WeChat: "好久不见！捷思有了新功能，来看看吧 😊"
+     - Email: "Jiesi Hermes — 你最近还好吗？" with a brief new-feature summary
      - Telegram/Discord: similar message in the configured channel
    - If no gateways are configured, escalate to a more prominent desktop notification.
    - Reuses the existing Gateway Bridge module — no new infrastructure needed.

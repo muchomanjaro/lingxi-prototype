@@ -33,7 +33,7 @@
 
 **What's absent:**
 - No 24-hour inactivity notification ("你昨天还没用完你的免费额度呢 😊")
-- No 3-day inactivity notification ("灵犀想你了！有新的技能包可用。")
+- No 3-day inactivity notification ("捷思想你了！有新的技能包可用。")
 - No 7-day follow-up via email/WeChat
 - No notification service / scheduler for user re-engagement
 - No "inactivity tracking" in the Rust Scheduler or any other module
